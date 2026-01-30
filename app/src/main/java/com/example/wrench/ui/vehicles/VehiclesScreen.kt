@@ -63,7 +63,8 @@ import com.example.wrench.data.remote.Vehicle
 @Composable
 fun VehiclesScreen(
     viewModel: VehiclesViewModel,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onVehicleClick: (Vehicle) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -152,7 +153,8 @@ fun VehiclesScreen(
                             VehicleCard(
                                 vehicle = vehicle,
                                 serverUrl = uiState.serverUrl,
-                                apiKey = uiState.apiKey
+                                apiKey = uiState.apiKey,
+                                onClick = { onVehicleClick(vehicle) }
                             )
                         }
 
@@ -200,7 +202,8 @@ fun VehiclesScreen(
                                                     VehicleCard(
                                                         vehicle = vehicle,
                                                         serverUrl = uiState.serverUrl,
-                                                        apiKey = uiState.apiKey
+                                                        apiKey = uiState.apiKey,
+                                                        onClick = { onVehicleClick(vehicle) }
                                                     )
                                                 }
                                             }
@@ -221,12 +224,15 @@ private fun VehicleCard(
     vehicle: Vehicle,
     serverUrl: String,
     apiKey: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column {

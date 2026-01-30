@@ -6,7 +6,9 @@
       "Bash(powershell -Command:*)",
       "WebSearch",
       "WebFetch(domain:docs.lubelogger.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(cmd /c \"gradlew.bat assembleDebug 2>&1\")"
     ]
   }
 }
