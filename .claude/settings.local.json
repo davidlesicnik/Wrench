@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.gradlew.bat:*)",
+      "Bash(cmd /c \"gradlew.bat assembleDebug\")",
+      "Bash(powershell -Command:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.lubelogger.com)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
