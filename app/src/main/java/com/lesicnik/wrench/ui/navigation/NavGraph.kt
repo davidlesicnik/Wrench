@@ -1,6 +1,8 @@
 package com.lesicnik.wrench.ui.navigation
 
 import android.net.Uri
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -15,6 +17,8 @@ import com.lesicnik.wrench.ui.expenses.AddExpenseScreen
 import com.lesicnik.wrench.ui.expenses.AddExpenseViewModel
 import com.lesicnik.wrench.ui.expenses.ExpensesScreen
 import com.lesicnik.wrench.ui.expenses.ExpensesViewModel
+import com.lesicnik.wrench.ui.home.HomeScreen
+import com.lesicnik.wrench.ui.home.HomeViewModel
 import com.lesicnik.wrench.ui.login.LoginScreen
 import com.lesicnik.wrench.ui.login.LoginViewModel
 import com.lesicnik.wrench.ui.vehicles.VehiclesScreen
@@ -23,6 +27,11 @@ import com.lesicnik.wrench.ui.vehicles.VehiclesViewModel
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Vehicles : Screen("vehicles")
+    data object Home : Screen("home/{vehicleId}/{vehicleName}/{odometerUnit}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
+            return "home/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
+        }
+    }
     data object Expenses : Screen("expenses/{vehicleId}/{vehicleName}/{odometerUnit}") {
         fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
             return "expenses/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
@@ -60,7 +69,13 @@ fun WrenchNavGraph(
             )
         }
 
-        composable(Screen.Vehicles.route) {
+        composable(
+            route = Screen.Vehicles.route,
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) {
             val viewModel: VehiclesViewModel = viewModel(
                 factory = VehiclesViewModel.Factory(credentialsRepository, vehicleRepository)
             )
@@ -72,7 +87,45 @@ fun WrenchNavGraph(
                     }
                 },
                 onVehicleClick = { vehicle ->
-                    navController.navigate(Screen.Expenses.createRoute(vehicle.id, vehicle.displayName, vehicle.odometerUnit ?: "km"))
+                    navController.navigate(Screen.Home.createRoute(vehicle.id, vehicle.displayName, vehicle.odometerUnit ?: "km"))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Home.route,
+            arguments = listOf(
+                navArgument("vehicleId") { type = NavType.IntType },
+                navArgument("vehicleName") { type = NavType.StringType },
+                navArgument("odometerUnit") { type = NavType.StringType }
+            ),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) { backStackEntry ->
+            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
+            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
+            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+
+            val viewModel: HomeViewModel = viewModel(
+                factory = HomeViewModel.Factory(
+                    credentialsRepository = credentialsRepository,
+                    expenseRepository = expenseRepository,
+                    vehicleId = vehicleId
+                )
+            )
+
+            HomeScreen(
+                viewModel = viewModel,
+                vehicleName = vehicleName,
+                odometerUnit = odometerUnit,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToExpenses = {
+                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
+                },
+                onAddExpense = { lastOdometer ->
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 }
             )
         }
@@ -83,7 +136,11 @@ fun WrenchNavGraph(
                 navArgument("vehicleId") { type = NavType.IntType },
                 navArgument("vehicleName") { type = NavType.StringType },
                 navArgument("odometerUnit") { type = NavType.StringType }
-            )
+            ),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
             val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
@@ -101,7 +158,12 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = {
+                    navController.navigate(Screen.Vehicles.route) {
+                        popUpTo(Screen.Vehicles.route) { inclusive = true }
+                    }
+                },
+                onNavigateToHome = { navController.popBackStack() },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 }
@@ -114,7 +176,11 @@ fun WrenchNavGraph(
                 navArgument("vehicleId") { type = NavType.IntType },
                 navArgument("odometerUnit") { type = NavType.StringType },
                 navArgument("lastOdometer") { type = NavType.IntType }
-            )
+            ),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
             val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"

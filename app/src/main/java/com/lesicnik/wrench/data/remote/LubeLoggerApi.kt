@@ -10,6 +10,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -115,6 +116,36 @@ interface LubeLoggerApi {
         @Field("cost") cost: String,
         @Field("isRecurring") isRecurring: String,
         @Field("notes") notes: String
+    ): Response<Unit>
+
+    @DELETE("api/vehicle/servicerecords/delete")
+    suspend fun deleteServiceRecord(
+        @Header("x-api-key") apiKey: String,
+        @Query("id") id: Int
+    ): Response<Unit>
+
+    @DELETE("api/vehicle/repairrecords/delete")
+    suspend fun deleteRepairRecord(
+        @Header("x-api-key") apiKey: String,
+        @Query("id") id: Int
+    ): Response<Unit>
+
+    @DELETE("api/vehicle/upgraderecords/delete")
+    suspend fun deleteUpgradeRecord(
+        @Header("x-api-key") apiKey: String,
+        @Query("id") id: Int
+    ): Response<Unit>
+
+    @DELETE("api/vehicle/gasrecords/delete")
+    suspend fun deleteFuelRecord(
+        @Header("x-api-key") apiKey: String,
+        @Query("id") id: Int
+    ): Response<Unit>
+
+    @DELETE("api/vehicle/taxrecords/delete")
+    suspend fun deleteTaxRecord(
+        @Header("x-api-key") apiKey: String,
+        @Query("id") id: Int
     ): Response<Unit>
 
     companion object {

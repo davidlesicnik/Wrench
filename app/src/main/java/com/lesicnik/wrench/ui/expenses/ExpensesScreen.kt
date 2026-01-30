@@ -1,5 +1,7 @@
 package com.lesicnik.wrench.ui.expenses
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
@@ -25,35 +28,51 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -75,6 +94,7 @@ import com.lesicnik.wrench.ui.theme.RepairRed
 import com.lesicnik.wrench.ui.theme.ServiceBlue
 import com.lesicnik.wrench.ui.theme.TaxOrange
 import com.lesicnik.wrench.ui.theme.UpgradePurple
+import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -86,11 +106,21 @@ fun ExpensesScreen(
     vehicleName: String,
     odometerUnit: String = "km",
     onNavigateBack: () -> Unit,
+    onNavigateToHome: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val lifecycleOwner = LocalLifecycleOwner.current
+    var showFilterSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val hasActiveFilters = uiState.selectedFilters.size < ExpenseType.entries.size
+
+    // Handle system back button to go directly to vehicle list
+    BackHandler {
+        onNavigateBack()
+    }
 
     // Refresh expenses when screen resumes (e.g., after adding an expense)
     DisposableEffect(lifecycleOwner) {
@@ -109,6 +139,13 @@ fun ExpensesScreen(
         uiState.errorMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearError()
+        }
+    }
+
+    LaunchedEffect(uiState.deleteSuccess) {
+        if (uiState.deleteSuccess) {
+            snackbarHostState.showSnackbar("Expense deleted")
+            viewModel.clearDeleteSuccess()
         }
     }
 
@@ -135,7 +172,28 @@ fun ExpensesScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    IconButton(onClick = { viewModel.loadExpenses() }) {
+                    IconButton(onClick = { showFilterSheet = true }) {
+                        BadgedBox(
+                            badge = {
+                                if (hasActiveFilters) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.error
+                                    ) {
+                                        Text(
+                                            text = uiState.selectedFilters.size.toString(),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = "Filter"
+                            )
+                        }
+                    }
+                    IconButton(onClick = { viewModel.loadExpenses(forceRefresh = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh"
@@ -153,7 +211,7 @@ fun ExpensesScreen(
         ) {
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading && uiState.expenses.isNotEmpty(),
-                onRefresh = { viewModel.loadExpenses() },
+                onRefresh = { viewModel.loadExpenses(forceRefresh = true) },
                 modifier = Modifier.fillMaxSize()
             ) {
                 when {
@@ -180,6 +238,12 @@ fun ExpensesScreen(
                         )
                     }
 
+                    uiState.filteredExpenses.isEmpty() -> {
+                        EmptyFilterContent(
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
                     else -> {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
@@ -191,8 +255,12 @@ fun ExpensesScreen(
                             ),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(uiState.expenses, key = { "${it.type}_${it.id}" }) { expense ->
-                                ExpenseCard(expense = expense, odometerUnit = odometerUnit)
+                            items(uiState.filteredExpenses, key = { "${it.type}_${it.id}" }) { expense ->
+                                SwipeableExpenseCard(
+                                    expense = expense,
+                                    odometerUnit = odometerUnit,
+                                    onDelete = { viewModel.requestDelete(expense) }
+                                )
                             }
                         }
                     }
@@ -203,12 +271,163 @@ fun ExpensesScreen(
             val lastOdometer = uiState.expenses.firstNotNullOfOrNull { it.odometer }
             ExpensesBottomBar(
                 selectedTab = ExpensesTab.EXPENSES,
-                onTabSelected = { /* TODO: Handle navigation */ },
+                onTabSelected = { tab ->
+                    when (tab) {
+                        ExpensesTab.HOME -> onNavigateToHome()
+                        else -> { /* TODO: Handle other tabs */ }
+                    }
+                },
                 onAddClick = { onAddExpense(lastOdometer) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }
+
+    if (showFilterSheet) {
+        FilterBottomSheet(
+            sheetState = sheetState,
+            onDismiss = {
+                scope.launch { sheetState.hide() }.invokeOnCompletion {
+                    if (!sheetState.isVisible) {
+                        showFilterSheet = false
+                    }
+                }
+            },
+            selectedFilters = uiState.selectedFilters,
+            onToggleFilter = { viewModel.toggleFilter(it) },
+            onSelectAll = { viewModel.selectAllFilters() },
+            onClearAll = { viewModel.clearAllFilters() }
+        )
+    }
+
+    uiState.expenseToDelete?.let { expense ->
+        DeleteConfirmationDialog(
+            expense = expense,
+            isDeleting = uiState.isDeleting,
+            onConfirm = { viewModel.confirmDelete() },
+            onDismiss = { viewModel.cancelDelete() }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableExpenseCard(
+    expense: Expense,
+    odometerUnit: String,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { dismissValue ->
+            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                false // Don't actually dismiss, we'll show a confirmation dialog
+            } else {
+                false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val color by animateColorAsState(
+                when (dismissState.targetValue) {
+                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
+                    else -> MaterialTheme.colorScheme.surface
+                },
+                label = "swipe background color"
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        },
+        enableDismissFromStartToEnd = false,
+        modifier = modifier
+    ) {
+        ExpenseCard(expense = expense, odometerUnit = odometerUnit)
+    }
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    expense: Expense,
+    isDeleting: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isDeleting) onDismiss() },
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text("Delete expense?")
+        },
+        text = {
+            Column {
+                Text(
+                    text = "This will permanently delete:",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = expense.description,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "${expense.date.format(dateFormatter)} • ${currencyFormatter.format(expense.cost)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = !isDeleting
+            ) {
+                if (isDeleting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Delete",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isDeleting
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -360,6 +579,155 @@ private fun EmptyContent(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun EmptyFilterContent(
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.FilterList,
+            contentDescription = null,
+            modifier = Modifier.size(72.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "No matching expenses",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Try adjusting your filters",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterBottomSheet(
+    sheetState: androidx.compose.material3.SheetState,
+    onDismiss: () -> Unit,
+    selectedFilters: Set<ExpenseType>,
+    onToggleFilter: (ExpenseType) -> Unit,
+    onSelectAll: () -> Unit,
+    onClearAll: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Filter by type",
+                    style = MaterialTheme.typography.titleLarge
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onSelectAll) {
+                        Text("All")
+                    }
+                    TextButton(onClick = onClearAll) {
+                        Text("None")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Filter chips
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ExpenseType.entries.forEach { type ->
+                    val isSelected = type in selectedFilters
+                    val (icon, color) = when (type) {
+                        ExpenseType.SERVICE -> Icons.Default.Build to ServiceBlue
+                        ExpenseType.REPAIR -> Icons.Default.Handyman to RepairRed
+                        ExpenseType.UPGRADE -> Icons.AutoMirrored.Filled.TrendingUp to UpgradePurple
+                        ExpenseType.FUEL -> Icons.Default.LocalGasStation to FuelGreen
+                        ExpenseType.TAX -> Icons.Default.Receipt to TaxOrange
+                    }
+
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onToggleFilter(type) },
+                        label = {
+                            Text(
+                                text = type.name.lowercase().replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        },
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(
+                                        color = if (isSelected) color.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = color
+                                )
+                            }
+                        } else null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            selectedContainerColor = color.copy(alpha = 0.15f),
+                            labelColor = MaterialTheme.colorScheme.onSurface,
+                            selectedLabelColor = color
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            selectedBorderColor = color.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

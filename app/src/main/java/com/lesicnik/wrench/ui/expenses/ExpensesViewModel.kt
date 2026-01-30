@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lesicnik.wrench.data.remote.records.Expense
+import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
@@ -15,8 +16,19 @@ import kotlinx.coroutines.launch
 data class ExpensesUiState(
     val expenses: List<Expense> = emptyList(),
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
-)
+    val errorMessage: String? = null,
+    val selectedFilters: Set<ExpenseType> = ExpenseType.entries.toSet(),
+    val expenseToDelete: Expense? = null,
+    val isDeleting: Boolean = false,
+    val deleteSuccess: Boolean = false
+) {
+    val filteredExpenses: List<Expense>
+        get() = if (selectedFilters.size == ExpenseType.entries.size) {
+            expenses
+        } else {
+            expenses.filter { it.type in selectedFilters }
+        }
+}
 
 class ExpensesViewModel(
     private val credentialsRepository: CredentialsRepository,
@@ -31,8 +43,18 @@ class ExpensesViewModel(
         loadExpenses()
     }
 
-    fun loadExpenses() {
+    fun loadExpenses(forceRefresh: Boolean = false) {
         viewModelScope.launch {
+            // Check for cached data first
+            val cachedExpenses = expenseRepository.getCachedExpenses(vehicleId)
+            if (cachedExpenses != null && !forceRefresh) {
+                _uiState.value = _uiState.value.copy(
+                    expenses = cachedExpenses,
+                    isLoading = false
+                )
+                return@launch
+            }
+
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
             val credentials = credentialsRepository.getCredentials()
@@ -47,7 +69,8 @@ class ExpensesViewModel(
             when (val result = expenseRepository.getExpenses(
                 credentials.serverUrl,
                 credentials.apiKey,
-                vehicleId
+                vehicleId,
+                forceRefresh = true
             )) {
                 is ApiResult.Success -> {
                     _uiState.value = _uiState.value.copy(
@@ -67,6 +90,80 @@ class ExpensesViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun toggleFilter(type: ExpenseType) {
+        val currentFilters = _uiState.value.selectedFilters
+        val newFilters = if (type in currentFilters) {
+            currentFilters - type
+        } else {
+            currentFilters + type
+        }
+        _uiState.value = _uiState.value.copy(selectedFilters = newFilters)
+    }
+
+    fun selectAllFilters() {
+        _uiState.value = _uiState.value.copy(selectedFilters = ExpenseType.entries.toSet())
+    }
+
+    fun clearAllFilters() {
+        _uiState.value = _uiState.value.copy(selectedFilters = emptySet())
+    }
+
+    fun requestDelete(expense: Expense) {
+        _uiState.value = _uiState.value.copy(expenseToDelete = expense)
+    }
+
+    fun cancelDelete() {
+        _uiState.value = _uiState.value.copy(expenseToDelete = null)
+    }
+
+    fun confirmDelete() {
+        val expense = _uiState.value.expenseToDelete ?: return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isDeleting = true)
+
+            val credentials = credentialsRepository.getCredentials()
+            if (credentials == null) {
+                _uiState.value = _uiState.value.copy(
+                    isDeleting = false,
+                    expenseToDelete = null,
+                    errorMessage = "Not logged in"
+                )
+                return@launch
+            }
+
+            when (val result = expenseRepository.deleteExpense(
+                credentials.serverUrl,
+                credentials.apiKey,
+                vehicleId,
+                expense.id,
+                expense.type
+            )) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        expenses = _uiState.value.expenses.filter {
+                            !(it.id == expense.id && it.type == expense.type)
+                        },
+                        isDeleting = false,
+                        expenseToDelete = null,
+                        deleteSuccess = true
+                    )
+                }
+                is ApiResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isDeleting = false,
+                        expenseToDelete = null,
+                        errorMessage = result.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearDeleteSuccess() {
+        _uiState.value = _uiState.value.copy(deleteSuccess = false)
     }
 
     class Factory(

@@ -17,6 +17,9 @@ import java.util.Locale
 
 class ExpenseRepository {
 
+    // Cache expenses per vehicle
+    private val expensesCache = mutableMapOf<Int, List<Expense>>()
+
     private val dateFormatters = listOf(
         DateTimeFormatter.ofPattern("d. MM. yyyy"),           // 4. 02. 2025 (LubeLogger format)
         DateTimeFormatter.ofPattern("d. M. yyyy"),            // 4. 2. 2025
@@ -32,11 +35,27 @@ class ExpenseRepository {
         DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH),    // 15 Jan 2024
     )
 
+    fun getCachedExpenses(vehicleId: Int): List<Expense>? {
+        return expensesCache[vehicleId]
+    }
+
+    fun invalidateCache(vehicleId: Int) {
+        expensesCache.remove(vehicleId)
+    }
+
     suspend fun getExpenses(
         serverUrl: String,
         apiKey: String,
-        vehicleId: Int
+        vehicleId: Int,
+        forceRefresh: Boolean = false
     ): ApiResult<List<Expense>> {
+        // Return cached data if available and not forcing refresh
+        if (!forceRefresh) {
+            expensesCache[vehicleId]?.let { cached ->
+                return ApiResult.Success(cached)
+            }
+        }
+
         return try {
             val api = LubeLoggerApi.create(serverUrl)
 
@@ -113,7 +132,9 @@ class ExpenseRepository {
                 allExpenses
             }
 
-            ApiResult.Success(expenses.sortedByDescending { it.date })
+            val sortedExpenses = expenses.sortedByDescending { it.date }
+            expensesCache[vehicleId] = sortedExpenses
+            ApiResult.Success(sortedExpenses)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
         }
@@ -316,6 +337,7 @@ class ExpenseRepository {
             }
 
             if (response.isSuccessful) {
+                invalidateCache(vehicleId)
                 ApiResult.Success(Unit)
             } else {
                 val errorBody = response.errorBody()?.string() ?: "No error body"
@@ -325,4 +347,109 @@ class ExpenseRepository {
             ApiResult.Error(e.message ?: "Unknown error occurred")
         }
     }
+
+    suspend fun deleteExpense(
+        serverUrl: String,
+        apiKey: String,
+        vehicleId: Int,
+        expenseId: Int,
+        type: ExpenseType
+    ): ApiResult<Unit> {
+        return try {
+            val api = LubeLoggerApi.create(serverUrl)
+
+            val response = when (type) {
+                ExpenseType.SERVICE -> api.deleteServiceRecord(apiKey, expenseId)
+                ExpenseType.REPAIR -> api.deleteRepairRecord(apiKey, expenseId)
+                ExpenseType.UPGRADE -> api.deleteUpgradeRecord(apiKey, expenseId)
+                ExpenseType.FUEL -> api.deleteFuelRecord(apiKey, expenseId)
+                ExpenseType.TAX -> api.deleteTaxRecord(apiKey, expenseId)
+            }
+
+            if (response.isSuccessful) {
+                invalidateCache(vehicleId)
+                ApiResult.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "No error body"
+                ApiResult.Error("Failed to delete expense: ${response.code()} - $errorBody")
+            }
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Unknown error occurred")
+        }
+    }
+
+    suspend fun getFuelStatistics(
+        serverUrl: String,
+        apiKey: String,
+        vehicleId: Int
+    ): ApiResult<FuelStatistics> {
+        return try {
+            val api = LubeLoggerApi.create(serverUrl)
+            val response = api.getFuelRecords(apiKey, vehicleId)
+
+            if (!response.isSuccessful) {
+                val errorBody = response.errorBody()?.string() ?: "No error body"
+                return ApiResult.Error("Failed to get fuel records: ${response.code()} - $errorBody")
+            }
+
+            val fuelList = response.body() ?: emptyList()
+            if (fuelList.isEmpty()) {
+                return ApiResult.Success(FuelStatistics(null, null, null))
+            }
+
+            // Sort by odometer to calculate fuel economy
+            val sortedFuel = fuelList
+                .filter { parseMileage(it.odometer) != null }
+                .sortedBy { parseMileage(it.odometer) }
+
+            // Calculate fuel economies for each record
+            val fuelEconomies = mutableListOf<Double>()
+            var lastFuelEconomy: Double? = null
+
+            for (i in 1 until sortedFuel.size) {
+                val current = sortedFuel[i]
+                val previous = sortedFuel[i - 1]
+
+                val currentOdo = parseMileage(current.odometer) ?: continue
+                val prevOdo = parseMileage(previous.odometer) ?: continue
+                val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
+
+                val distance = currentOdo - prevOdo
+                if (distance > 0 && liters > 0) {
+                    val economy = (liters / distance) * 100
+                    fuelEconomies.add(economy)
+                    lastFuelEconomy = economy
+                }
+            }
+
+            val averageFuelEconomy = if (fuelEconomies.isNotEmpty()) {
+                fuelEconomies.average()
+            } else {
+                null
+            }
+
+            // Get the last odometer reading (highest odometer value)
+            val lastOdometer = sortedFuel.lastOrNull()?.let { parseMileage(it.odometer) }
+
+            ApiResult.Success(
+                FuelStatistics(
+                    averageFuelConsumption = averageFuelEconomy,
+                    lastFuelConsumption = lastFuelEconomy,
+                    lastOdometer = lastOdometer
+                )
+            )
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Unknown error occurred")
+        }
+    }
 }
+
+data class FuelStatistics(
+    val averageFuelConsumption: Double?,
+    val lastFuelConsumption: Double?,
+    val lastOdometer: Int?,
+    val thisMonthFuelCost: Double = 0.0,
+    val thisMonthOtherCost: Double = 0.0,
+    val lastMonthFuelCost: Double = 0.0,
+    val lastMonthOtherCost: Double = 0.0
+)
