@@ -11,6 +11,8 @@ import androidx.navigation.navArgument
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
+import com.lesicnik.wrench.ui.expenses.AddExpenseScreen
+import com.lesicnik.wrench.ui.expenses.AddExpenseViewModel
 import com.lesicnik.wrench.ui.expenses.ExpensesScreen
 import com.lesicnik.wrench.ui.expenses.ExpensesViewModel
 import com.lesicnik.wrench.ui.login.LoginScreen
@@ -24,6 +26,11 @@ sealed class Screen(val route: String) {
     data object Expenses : Screen("expenses/{vehicleId}/{vehicleName}/{odometerUnit}") {
         fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
             return "expenses/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
+        }
+    }
+    data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}") {
+        fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?): String {
+            return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}"
         }
     }
 }
@@ -94,7 +101,39 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onAddExpense = { lastOdometer ->
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AddExpense.route,
+            arguments = listOf(
+                navArgument("vehicleId") { type = NavType.IntType },
+                navArgument("odometerUnit") { type = NavType.StringType },
+                navArgument("lastOdometer") { type = NavType.IntType }
+            )
+        ) { backStackEntry ->
+            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
+            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val lastOdometer = backStackEntry.arguments?.getInt("lastOdometer")?.takeIf { it >= 0 }
+
+            val viewModel: AddExpenseViewModel = viewModel(
+                factory = AddExpenseViewModel.Factory(
+                    credentialsRepository = credentialsRepository,
+                    expenseRepository = expenseRepository,
+                    vehicleId = vehicleId
+                )
+            )
+
+            AddExpenseScreen(
+                viewModel = viewModel,
+                odometerUnit = odometerUnit,
+                lastOdometer = lastOdometer,
+                onNavigateBack = { navController.popBackStack() },
+                onExpenseSaved = { navController.popBackStack() }
             )
         }
     }

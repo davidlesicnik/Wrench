@@ -49,10 +49,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
@@ -81,10 +85,25 @@ fun ExpensesScreen(
     viewModel: ExpensesViewModel,
     vehicleName: String,
     odometerUnit: String = "km",
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onAddExpense: (lastOdometer: Int?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Refresh expenses when screen resumes (e.g., after adding an expense)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.loadExpenses()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { message ->
@@ -181,10 +200,11 @@ fun ExpensesScreen(
             }
 
             // Bottom bar overlaid on top of content
+            val lastOdometer = uiState.expenses.firstNotNullOfOrNull { it.odometer }
             ExpensesBottomBar(
                 selectedTab = ExpensesTab.EXPENSES,
                 onTabSelected = { /* TODO: Handle navigation */ },
-                onAddClick = { /* TODO: Handle add expense */ },
+                onAddClick = { onAddExpense(lastOdometer) },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }

@@ -10,8 +10,11 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
@@ -51,6 +54,68 @@ interface LubeLoggerApi {
         @Header("x-api-key") apiKey: String,
         @Query("vehicleId") vehicleId: Int
     ): Response<List<TaxRecord>>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/servicerecords/add")
+    suspend fun addServiceRecord(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("odometer") odometer: String,
+        @Field("description") description: String,
+        @Field("cost") cost: String,
+        @Field("notes") notes: String
+    ): Response<Unit>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/repairrecords/add")
+    suspend fun addRepairRecord(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("odometer") odometer: String,
+        @Field("description") description: String,
+        @Field("cost") cost: String,
+        @Field("notes") notes: String
+    ): Response<Unit>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/upgraderecords/add")
+    suspend fun addUpgradeRecord(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("odometer") odometer: String,
+        @Field("description") description: String,
+        @Field("cost") cost: String,
+        @Field("notes") notes: String
+    ): Response<Unit>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/gasrecords/add")
+    suspend fun addFuelRecord(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("odometer") odometer: String,
+        @Field("fuelConsumed") fuelConsumed: String,
+        @Field("isFillToFull") isFillToFull: String,
+        @Field("missedFuelUp") missedFuelUp: String,
+        @Field("cost") cost: String,
+        @Field("notes") notes: String
+    ): Response<Unit>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/taxrecords/add")
+    suspend fun addTaxRecord(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("description") description: String,
+        @Field("cost") cost: String,
+        @Field("isRecurring") isRecurring: String,
+        @Field("notes") notes: String
+    ): Response<Unit>
 
     companion object {
         fun create(baseUrl: String): LubeLoggerApi {

@@ -217,4 +217,86 @@ class ExpenseRepository {
         description = description ?: "Tax",
         notes = notes
     )
+
+    suspend fun addExpense(
+        serverUrl: String,
+        apiKey: String,
+        vehicleId: Int,
+        type: ExpenseType,
+        date: LocalDate,
+        odometer: Int?,
+        description: String,
+        cost: Double,
+        notes: String,
+        fuelConsumed: Double? = null,
+        isFillToFull: Boolean = false,
+        isMissedFuelUp: Boolean = false,
+        isRecurring: Boolean = false
+    ): ApiResult<Unit> {
+        return try {
+            val api = LubeLoggerApi.create(serverUrl)
+            val dateString = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+            val odometerString = odometer?.toString() ?: ""
+            val costString = String.format(java.util.Locale.US, "%.2f", cost)
+
+            val response = when (type) {
+                ExpenseType.SERVICE -> api.addServiceRecord(
+                    apiKey = apiKey,
+                    vehicleId = vehicleId,
+                    date = dateString,
+                    odometer = odometerString,
+                    description = description,
+                    cost = costString,
+                    notes = notes
+                )
+                ExpenseType.REPAIR -> api.addRepairRecord(
+                    apiKey = apiKey,
+                    vehicleId = vehicleId,
+                    date = dateString,
+                    odometer = odometerString,
+                    description = description,
+                    cost = costString,
+                    notes = notes
+                )
+                ExpenseType.UPGRADE -> api.addUpgradeRecord(
+                    apiKey = apiKey,
+                    vehicleId = vehicleId,
+                    date = dateString,
+                    odometer = odometerString,
+                    description = description,
+                    cost = costString,
+                    notes = notes
+                )
+                ExpenseType.FUEL -> api.addFuelRecord(
+                    apiKey = apiKey,
+                    vehicleId = vehicleId,
+                    date = dateString,
+                    odometer = odometerString,
+                    fuelConsumed = fuelConsumed?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "",
+                    isFillToFull = isFillToFull.toString(),
+                    missedFuelUp = isMissedFuelUp.toString(),
+                    cost = costString,
+                    notes = notes
+                )
+                ExpenseType.TAX -> api.addTaxRecord(
+                    apiKey = apiKey,
+                    vehicleId = vehicleId,
+                    date = dateString,
+                    description = description,
+                    cost = costString,
+                    isRecurring = isRecurring.toString(),
+                    notes = notes
+                )
+            }
+
+            if (response.isSuccessful) {
+                ApiResult.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "No error body"
+                ApiResult.Error("Failed to add expense: ${response.code()} - $errorBody")
+            }
+        } catch (e: Exception) {
+            ApiResult.Error(e.message ?: "Unknown error occurred")
+        }
+    }
 }
