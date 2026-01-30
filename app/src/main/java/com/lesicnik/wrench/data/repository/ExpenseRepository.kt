@@ -74,8 +74,33 @@ class ExpenseRepository {
                 }
 
                 if (fuelRecords.isSuccessful) {
-                    fuelRecords.body()?.forEach { record ->
-                        allExpenses.add(record.toExpense())
+                    val fuelList = fuelRecords.body() ?: emptyList()
+                    // Sort by odometer ascending to calculate fuel economy
+                    val sortedFuel = fuelList
+                        .filter { parseMileage(it.odometer) != null }
+                        .sortedBy { parseMileage(it.odometer) }
+
+                    val odometerToFuelEconomy = mutableMapOf<Int, Double>()
+
+                    for (i in 1 until sortedFuel.size) {
+                        val current = sortedFuel[i]
+                        val previous = sortedFuel[i - 1]
+
+                        val currentOdo = parseMileage(current.odometer) ?: continue
+                        val prevOdo = parseMileage(previous.odometer) ?: continue
+                        val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
+
+                        val distance = currentOdo - prevOdo
+                        if (distance > 0 && liters > 0) {
+                            val economy = (liters / distance) * 100
+                            odometerToFuelEconomy[currentOdo] = economy
+                        }
+                    }
+
+                    fuelList.forEach { record ->
+                        val odometer = parseMileage(record.odometer)
+                        val economy = odometer?.let { odometerToFuelEconomy[it] }
+                        allExpenses.add(record.toExpense(economy))
                     }
                 }
 
@@ -197,7 +222,7 @@ class ExpenseRepository {
         notes = notes
     )
 
-    private fun FuelRecord.toExpense() = Expense(
+    private fun FuelRecord.toExpense(fuelEconomy: Double? = null) = Expense(
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.FUEL,
         date = parseDate(date),
@@ -205,7 +230,8 @@ class ExpenseRepository {
         odometer = parseMileage(odometer),
         description = "Fuel",
         notes = notes,
-        liters = fuelConsumed?.let { parseNumber(it).takeIf { v -> v > 0 } }
+        liters = fuelConsumed?.let { parseNumber(it).takeIf { v -> v > 0 } },
+        fuelEconomy = fuelEconomy
     )
 
     private fun TaxRecord.toExpense() = Expense(

@@ -18,5 +18,6 @@ data class Expense(
     val odometer: Int?,
     val description: String,
     val notes: String? = null,
-    val liters: Double? = null
+    val liters: Double? = null,
+    val fuelEconomy: Double? = null // L/100km
 )
