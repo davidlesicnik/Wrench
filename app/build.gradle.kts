@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.wrench"
+    namespace = "com.lesicnik.wrench"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.wrench"
+        applicationId = "com.lesicnik.wrench"
         minSdk = 29
         targetSdk = 35
         versionCode = 1
