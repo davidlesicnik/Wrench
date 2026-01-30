@@ -100,7 +100,7 @@ class ExpenseRepository {
         for (formatter in dateFormatters) {
             try {
                 return LocalDate.parse(cleanedDate, formatter)
-            } catch (e: DateTimeParseException) {
+            } catch (_: DateTimeParseException) {
                 // Try next formatter
             }
 
@@ -108,7 +108,7 @@ class ExpenseRepository {
             if (cleanedDate.contains("T")) {
                 try {
                     return LocalDate.parse(cleanedDate.substringBefore("T"), formatter)
-                } catch (e: DateTimeParseException) {
+                } catch (_: DateTimeParseException) {
                     // Try next formatter
                 }
             }
@@ -120,7 +120,7 @@ class ExpenseRepository {
             try {
                 val (year, month, day) = isoMatch.destructured
                 return LocalDate.of(year.toInt(), month.toInt(), day.toInt())
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Fall through
             }
         }

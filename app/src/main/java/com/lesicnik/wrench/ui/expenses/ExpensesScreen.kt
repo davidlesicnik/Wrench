@@ -24,7 +24,7 @@ import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,8 +47,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
@@ -245,7 +243,7 @@ private fun ExpenseIcon(type: ExpenseType) {
     val (icon, color) = when (type) {
         ExpenseType.SERVICE -> Icons.Default.Build to ServiceBlue
         ExpenseType.REPAIR -> Icons.Default.Handyman to RepairRed
-        ExpenseType.UPGRADE -> Icons.Default.TrendingUp to UpgradePurple
+        ExpenseType.UPGRADE -> Icons.AutoMirrored.Filled.TrendingUp to UpgradePurple
         ExpenseType.FUEL -> Icons.Default.LocalGasStation to FuelGreen
         ExpenseType.TAX -> Icons.Default.Receipt to TaxOrange
     }
