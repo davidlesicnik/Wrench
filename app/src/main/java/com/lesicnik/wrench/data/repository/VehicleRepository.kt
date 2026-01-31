@@ -1,6 +1,6 @@
 package com.lesicnik.wrench.data.repository
 
-import com.lesicnik.wrench.data.remote.LubeLoggerApi
+import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.remote.Vehicle
 
 sealed class ApiResult<out T> {
@@ -12,7 +12,7 @@ class VehicleRepository {
 
     suspend fun getVehicles(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {
         return try {
-            val api = LubeLoggerApi.create(serverUrl)
+            val api = NetworkModule.getApi(serverUrl)
             val response = api.getVehicles(apiKey)
 
             if (response.isSuccessful) {

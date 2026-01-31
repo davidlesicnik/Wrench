@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.navigation.compose.rememberNavController
-import com.lesicnik.wrench.data.local.AppDatabase
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
@@ -14,8 +13,7 @@ import com.lesicnik.wrench.ui.theme.WrenchTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val database by lazy { AppDatabase.getInstance(applicationContext) }
-    private val credentialsRepository by lazy { CredentialsRepository(database.credentialsDao()) }
+    private val credentialsRepository by lazy { CredentialsRepository(applicationContext) }
     private val vehicleRepository by lazy { VehicleRepository() }
     private val expenseRepository by lazy { ExpenseRepository() }
 

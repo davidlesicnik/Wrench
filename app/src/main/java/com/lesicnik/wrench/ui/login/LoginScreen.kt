@@ -1,7 +1,5 @@
 package com.lesicnik.wrench.ui.login
 
-import android.graphics.Rect
-import android.view.ViewTreeObserver
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,6 +24,8 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,8 +39,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,7 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalView
+import com.lesicnik.wrench.ui.utils.rememberKeyboardVisibility
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,24 +68,7 @@ fun LoginScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
     var apiKeyVisible by remember { mutableStateOf(false) }
-
-    // Detect keyboard visibility
-    val view = LocalView.current
-    var isKeyboardOpen by remember { mutableStateOf(false) }
-
-    DisposableEffect(view) {
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            val rect = Rect()
-            view.getWindowVisibleDisplayFrame(rect)
-            val screenHeight = view.rootView.height
-            val keypadHeight = screenHeight - rect.bottom
-            isKeyboardOpen = keypadHeight > screenHeight * 0.15
-        }
-        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose {
-            view.viewTreeObserver.removeOnGlobalLayoutListener(listener)
-        }
-    }
+    val isKeyboardOpen by rememberKeyboardVisibility()
 
     LaunchedEffect(uiState.isLoggedIn) {
         if (uiState.isLoggedIn) {
@@ -98,6 +81,14 @@ fun LoginScreen(
             snackbarHostState.showSnackbar(message)
             viewModel.clearError()
         }
+    }
+
+    // HTTP Warning Dialog
+    if (uiState.showHttpWarning) {
+        HttpWarningDialog(
+            onDismiss = { viewModel.dismissHttpWarning() },
+            onConfirm = { viewModel.confirmHttpLogin() }
+        )
     }
 
     Scaffold(
@@ -286,4 +277,51 @@ fun LoginScreen(
             }
         }
     }
+}
+
+@Composable
+private fun HttpWarningDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text("Insecure Connection")
+        },
+        text = {
+            Column {
+                Text(
+                    text = "You are connecting to an HTTP server. This connection is not encrypted and your API key may be visible to others on the network.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "For security, consider using HTTPS instead.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = "Continue Anyway",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

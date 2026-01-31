@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.ElectricCar
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Refresh
@@ -38,7 +37,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -58,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lesicnik.wrench.data.remote.Vehicle
+import com.lesicnik.wrench.ui.components.EmptyContent
+import com.lesicnik.wrench.ui.components.ErrorContent
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,6 +127,7 @@ fun VehiclesScreen(
 
                 uiState.errorMessage != null && uiState.vehicles.isEmpty() -> {
                     ErrorContent(
+                        title = "Failed to load vehicles",
                         message = uiState.errorMessage ?: "Unknown error",
                         onRetry = { viewModel.loadVehicles() },
                         modifier = Modifier.fillMaxSize()
@@ -135,6 +136,9 @@ fun VehiclesScreen(
 
                 uiState.vehicles.isEmpty() -> {
                     EmptyContent(
+                        icon = Icons.Default.DirectionsCar,
+                        title = "No vehicles found",
+                        message = "Add a vehicle in LubeLogger to get started",
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -332,78 +336,3 @@ private fun VehicleCard(
     }
 }
 
-@Composable
-private fun EmptyContent(
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.DirectionsCar,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "No vehicles found",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Add a vehicle in LubeLogger to get started",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun ErrorContent(
-    message: String,
-    onRetry: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Error,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.error
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Failed to load vehicles",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.error
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextButton(onClick = onRetry) {
-            Text("Retry")
-        }
-    }
-}

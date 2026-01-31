@@ -1,6 +1,6 @@
 package com.lesicnik.wrench.data.repository
 
-import com.lesicnik.wrench.data.remote.LubeLoggerApi
+import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.remote.records.FuelRecord
@@ -101,7 +101,7 @@ class ExpenseRepository {
         }
 
         return try {
-            val api = LubeLoggerApi.create(serverUrl)
+            val api = NetworkModule.getApi(serverUrl)
 
             val expenses = coroutineScope {
                 val serviceDeferred = async { api.getServiceRecords(apiKey, vehicleId) }
@@ -325,7 +325,7 @@ class ExpenseRepository {
         isRecurring: Boolean = false
     ): ApiResult<Unit> {
         return try {
-            val api = LubeLoggerApi.create(serverUrl)
+            val api = NetworkModule.getApi(serverUrl)
             val dateString = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
             val odometerString = odometer?.toString() ?: ""
             val costString = String.format(java.util.Locale.US, "%.2f", cost)
@@ -400,7 +400,7 @@ class ExpenseRepository {
         type: ExpenseType
     ): ApiResult<Unit> {
         return try {
-            val api = LubeLoggerApi.create(serverUrl)
+            val api = NetworkModule.getApi(serverUrl)
 
             val response = when (type) {
                 ExpenseType.SERVICE -> api.deleteServiceRecord(apiKey, expenseId)
@@ -436,7 +436,7 @@ class ExpenseRepository {
         }
 
         return try {
-            val api = LubeLoggerApi.create(serverUrl)
+            val api = NetworkModule.getApi(serverUrl)
             val response = api.getFuelRecords(apiKey, vehicleId)
 
             if (!response.isSuccessful) {

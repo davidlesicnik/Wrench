@@ -1,7 +1,5 @@
 package com.lesicnik.wrench.ui.expenses
 
-import android.graphics.Rect
-import android.view.ViewTreeObserver
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -32,15 +30,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AttachMoney
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Notes
-import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -64,7 +58,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,20 +70,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.ExpenseType
-import com.lesicnik.wrench.ui.theme.FuelGreen
-import com.lesicnik.wrench.ui.theme.RepairRed
-import com.lesicnik.wrench.ui.theme.ServiceBlue
-import com.lesicnik.wrench.ui.theme.TaxOrange
-import com.lesicnik.wrench.ui.theme.UpgradePurple
+import com.lesicnik.wrench.ui.utils.color
+import com.lesicnik.wrench.ui.utils.getStyle
+import com.lesicnik.wrench.ui.utils.rememberKeyboardVisibility
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDate
@@ -111,24 +100,7 @@ fun AddExpenseScreen(
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     var showDatePicker by remember { mutableStateOf(false) }
-
-    // Detect keyboard visibility
-    val view = LocalView.current
-    var isKeyboardOpen by remember { mutableStateOf(false) }
-
-    DisposableEffect(view) {
-        val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            val rect = Rect()
-            view.getWindowVisibleDisplayFrame(rect)
-            val screenHeight = view.rootView.height
-            val keypadHeight = screenHeight - rect.bottom
-            isKeyboardOpen = keypadHeight > screenHeight * 0.15
-        }
-        view.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose {
-            view.viewTreeObserver.removeOnGlobalLayoutListener(listener)
-        }
-    }
+    val isKeyboardOpen by rememberKeyboardVisibility()
 
     val expenseTypeOrder = remember {
         listOf(
@@ -142,13 +114,7 @@ fun AddExpenseScreen(
 
     // Get color for current expense type
     val currentTypeColor = remember(uiState.expenseType) {
-        when (uiState.expenseType) {
-            ExpenseType.SERVICE -> ServiceBlue
-            ExpenseType.REPAIR -> RepairRed
-            ExpenseType.UPGRADE -> UpgradePurple
-            ExpenseType.FUEL -> FuelGreen
-            ExpenseType.TAX -> TaxOrange
-        }
+        uiState.expenseType.color
     }
 
     // Animated button color
@@ -561,13 +527,10 @@ private fun ExpenseTypeChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    val (icon, color, label) = when (type) {
-        ExpenseType.SERVICE -> Triple(Icons.Default.Build, ServiceBlue, "Service")
-        ExpenseType.REPAIR -> Triple(Icons.Default.Handyman, RepairRed, "Repair")
-        ExpenseType.UPGRADE -> Triple(Icons.AutoMirrored.Filled.TrendingUp, UpgradePurple, "Upgrade")
-        ExpenseType.FUEL -> Triple(Icons.Default.LocalGasStation, FuelGreen, "Fuel")
-        ExpenseType.TAX -> Triple(Icons.Default.Receipt, TaxOrange, "Tax")
-    }
+    val style = type.getStyle()
+    val icon = style.icon
+    val color = style.color
+    val label = style.label
 
     // Animated scale for selection
     val scale by animateFloatAsState(

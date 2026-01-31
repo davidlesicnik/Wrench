@@ -5,11 +5,7 @@ import com.lesicnik.wrench.data.remote.records.RepairRecord
 import com.lesicnik.wrench.data.remote.records.ServiceRecord
 import com.lesicnik.wrench.data.remote.records.TaxRecord
 import com.lesicnik.wrench.data.remote.records.UpgradeRecord
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -17,7 +13,6 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Query
-import java.util.concurrent.TimeUnit
 
 interface LubeLoggerApi {
 
@@ -148,27 +143,4 @@ interface LubeLoggerApi {
         @Query("id") id: Int
     ): Response<Unit>
 
-    companion object {
-        fun create(baseUrl: String): LubeLoggerApi {
-            val loggingInterceptor = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            }
-
-            val client = OkHttpClient.Builder()
-                .addInterceptor(loggingInterceptor)
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .build()
-
-            val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
-
-            return Retrofit.Builder()
-                .baseUrl(normalizedUrl)
-                .client(client)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-                .create(LubeLoggerApi::class.java)
-        }
-    }
 }

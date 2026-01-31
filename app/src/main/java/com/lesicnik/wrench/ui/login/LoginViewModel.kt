@@ -18,7 +18,9 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false,
-    val isCheckingStoredCredentials: Boolean = true
+    val isCheckingStoredCredentials: Boolean = true,
+    val showHttpWarning: Boolean = false,
+    val pendingHttpLogin: Boolean = false
 )
 
 class LoginViewModel(
@@ -59,10 +61,32 @@ class LoginViewModel(
 
     fun onSaveCredentialsChanged(save: Boolean) {
         _uiState.value = _uiState.value.copy(saveCredentials = save)
+        // When unchecking "Save credentials", delete any stored credentials
+        if (!save) {
+            viewModelScope.launch {
+                credentialsRepository.deleteCredentials()
+            }
+        }
     }
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun dismissHttpWarning() {
+        _uiState.value = _uiState.value.copy(showHttpWarning = false, pendingHttpLogin = false)
+    }
+
+    fun confirmHttpLogin() {
+        _uiState.value = _uiState.value.copy(showHttpWarning = false)
+        performLogin(autoLogin = false)
+    }
+
+    private fun isHttpUrl(url: String): Boolean {
+        val normalizedUrl = url.trim().lowercase()
+        return normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("http://localhost") &&
+               !normalizedUrl.startsWith("http://127.0.0.1") && !normalizedUrl.startsWith("http://10.") &&
+               !normalizedUrl.startsWith("http://192.168.") && !normalizedUrl.startsWith("http://172.")
     }
 
     fun login(autoLogin: Boolean = false) {
@@ -77,6 +101,18 @@ class LoginViewModel(
             _uiState.value = state.copy(errorMessage = "API Key is required")
             return
         }
+
+        // Check if URL is HTTP and show warning (only for non-auto-login)
+        if (!autoLogin && isHttpUrl(state.serverUrl)) {
+            _uiState.value = state.copy(showHttpWarning = true, pendingHttpLogin = true)
+            return
+        }
+
+        performLogin(autoLogin)
+    }
+
+    private fun performLogin(autoLogin: Boolean) {
+        val state = _uiState.value
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
