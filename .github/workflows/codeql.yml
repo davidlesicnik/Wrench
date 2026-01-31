@@ -32,9 +32,8 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: ${{ github.actor == 'dependabot[bot]' && 'none' || 'manual' }}
+          build-mode: manual
       - name: Build (manual)
-        if: ${{ github.actor != 'dependabot[bot]' }}
-        run: ./gradlew --no-daemon :app:assembleDebug
+        run: ./gradlew --no-daemon :app:compileDebugKotlin :app:compileDebugJavaWithJavac
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
