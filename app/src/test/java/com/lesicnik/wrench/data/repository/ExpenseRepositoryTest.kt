@@ -65,15 +65,17 @@ class ExpenseRepositoryTest {
     }
 
     @Test
-    fun `parseDate returns today for malformed input`() {
-        val result = invokeParseDate("not-a-date")
-        assertEquals(LocalDate.now(), result)
+    fun `parseDate throws for malformed input`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            invokeParseDate("not-a-date")
+        }
     }
 
     @Test
-    fun `parseDate handles empty string`() {
-        val result = invokeParseDate("")
-        assertEquals(LocalDate.now(), result)
+    fun `parseDate throws for empty string`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            invokeParseDate("")
+        }
     }
 
     // Number Parsing Tests

@@ -70,7 +70,7 @@ class ExpensesViewModel(
                 credentials.serverUrl,
                 credentials.apiKey,
                 vehicleId,
-                forceRefresh = true
+                forceRefresh = forceRefresh
             )) {
                 is ApiResult.Success -> {
                     _uiState.value = _uiState.value.copy(

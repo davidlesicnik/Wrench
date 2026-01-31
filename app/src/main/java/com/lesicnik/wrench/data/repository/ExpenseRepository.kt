@@ -14,17 +14,19 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import retrofit2.Response
 
 class ExpenseRepository {
 
     // Cache expenses per vehicle
-    private val expensesCache = mutableMapOf<Int, List<Expense>>()
+    private val expensesCache = ConcurrentHashMap<Int, List<Expense>>()
 
     // Cache fuel statistics per vehicle
-    private val fuelStatsCache = mutableMapOf<Int, FuelStatistics>()
+    private val fuelStatsCache = ConcurrentHashMap<Int, FuelStatistics>()
 
     // Track which vehicles are currently being preloaded to avoid duplicate requests
-    private val preloadingVehicles = mutableSetOf<Int>()
+    private val preloadingVehicles = ConcurrentHashMap.newKeySet<Int>()
 
     private val dateFormatters = listOf(
         DateTimeFormatter.ofPattern("d. MM. yyyy"),           // 4. 02. 2025 (LubeLogger format)
@@ -109,79 +111,81 @@ class ExpenseRepository {
         return try {
             val api = NetworkModule.getApi(serverUrl)
 
-            val expenses = coroutineScope {
+            val responses = coroutineScope {
                 val serviceDeferred = async { api.getServiceRecords(apiKey, vehicleId) }
                 val repairDeferred = async { api.getRepairRecords(apiKey, vehicleId) }
                 val upgradeDeferred = async { api.getUpgradeRecords(apiKey, vehicleId) }
                 val fuelDeferred = async { api.getFuelRecords(apiKey, vehicleId) }
                 val taxDeferred = async { api.getTaxRecords(apiKey, vehicleId) }
 
-                val serviceRecords = serviceDeferred.await()
-                val repairRecords = repairDeferred.await()
-                val upgradeRecords = upgradeDeferred.await()
-                val fuelRecords = fuelDeferred.await()
-                val taxRecords = taxDeferred.await()
-
-                val allExpenses = mutableListOf<Expense>()
-
-                if (serviceRecords.isSuccessful) {
-                    serviceRecords.body()?.forEach { record ->
-                        allExpenses.add(record.toExpense())
-                    }
-                }
-
-                if (repairRecords.isSuccessful) {
-                    repairRecords.body()?.forEach { record ->
-                        allExpenses.add(record.toExpense())
-                    }
-                }
-
-                if (upgradeRecords.isSuccessful) {
-                    upgradeRecords.body()?.forEach { record ->
-                        allExpenses.add(record.toExpense())
-                    }
-                }
-
-                if (fuelRecords.isSuccessful) {
-                    val fuelList = fuelRecords.body() ?: emptyList()
-                    // Sort by odometer ascending to calculate fuel economy
-                    val sortedFuel = fuelList
-                        .filter { parseMileage(it.odometer) != null }
-                        .sortedBy { parseMileage(it.odometer) }
-
-                    val odometerToFuelEconomy = mutableMapOf<Int, Double>()
-
-                    for (i in 1 until sortedFuel.size) {
-                        val current = sortedFuel[i]
-                        val previous = sortedFuel[i - 1]
-
-                        val currentOdo = parseMileage(current.odometer) ?: continue
-                        val prevOdo = parseMileage(previous.odometer) ?: continue
-                        val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
-
-                        val distance = currentOdo - prevOdo
-                        if (distance > 0 && liters > 0) {
-                            val economy = (liters / distance) * 100
-                            odometerToFuelEconomy[currentOdo] = economy
-                        }
-                    }
-
-                    fuelList.forEach { record ->
-                        val odometer = parseMileage(record.odometer)
-                        val economy = odometer?.let { odometerToFuelEconomy[it] }
-                        allExpenses.add(record.toExpense(economy))
-                    }
-                }
-
-                if (taxRecords.isSuccessful) {
-                    taxRecords.body()?.forEach { record ->
-                        allExpenses.add(record.toExpense())
-                    }
-                }
-
-                allExpenses
+                ExpenseResponses(
+                    serviceRecords = serviceDeferred.await(),
+                    repairRecords = repairDeferred.await(),
+                    upgradeRecords = upgradeDeferred.await(),
+                    fuelRecords = fuelDeferred.await(),
+                    taxRecords = taxDeferred.await()
+                )
             }
 
+            val errors = buildList {
+                addIfFailed("service records", responses.serviceRecords)
+                addIfFailed("repair records", responses.repairRecords)
+                addIfFailed("upgrade records", responses.upgradeRecords)
+                addIfFailed("fuel records", responses.fuelRecords)
+                addIfFailed("tax records", responses.taxRecords)
+            }
+            if (errors.isNotEmpty()) {
+                return ApiResult.Error("Failed to load expenses: ${errors.joinToString("; ")}")
+            }
+
+            val allExpenses = mutableListOf<Expense>()
+
+            responses.serviceRecords.body()?.forEach { record ->
+                allExpenses.add(record.toExpense())
+            }
+
+            responses.repairRecords.body()?.forEach { record ->
+                allExpenses.add(record.toExpense())
+            }
+
+            responses.upgradeRecords.body()?.forEach { record ->
+                allExpenses.add(record.toExpense())
+            }
+
+            val fuelList = responses.fuelRecords.body() ?: emptyList()
+            // Sort by odometer ascending to calculate fuel economy
+            val sortedFuel = fuelList
+                .filter { parseMileage(it.odometer) != null }
+                .sortedBy { parseMileage(it.odometer) }
+
+            val odometerToFuelEconomy = mutableMapOf<Int, Double>()
+
+            for (i in 1 until sortedFuel.size) {
+                val current = sortedFuel[i]
+                val previous = sortedFuel[i - 1]
+
+                val currentOdo = parseMileage(current.odometer) ?: continue
+                val prevOdo = parseMileage(previous.odometer) ?: continue
+                val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
+
+                val distance = currentOdo - prevOdo
+                if (distance > 0 && liters > 0) {
+                    val economy = (liters / distance) * 100
+                    odometerToFuelEconomy[currentOdo] = economy
+                }
+            }
+
+            fuelList.forEach { record ->
+                val odometer = parseMileage(record.odometer)
+                val economy = odometer?.let { odometerToFuelEconomy[it] }
+                allExpenses.add(record.toExpense(economy))
+            }
+
+            responses.taxRecords.body()?.forEach { record ->
+                allExpenses.add(record.toExpense())
+            }
+
+            val expenses = allExpenses
             val sortedExpenses = expenses.sortedByDescending { it.date }
             expensesCache[vehicleId] = sortedExpenses
             ApiResult.Success(sortedExpenses)
@@ -192,6 +196,9 @@ class ExpenseRepository {
 
     private fun parseDate(dateString: String): LocalDate {
         val cleanedDate = dateString.trim()
+        if (cleanedDate.isBlank()) {
+            throw IllegalArgumentException("Date is blank")
+        }
 
         for (formatter in dateFormatters) {
             try {
@@ -221,7 +228,7 @@ class ExpenseRepository {
             }
         }
 
-        return LocalDate.now()
+        throw IllegalArgumentException("Unsupported date format: $cleanedDate")
     }
 
     private fun parseNumber(value: String?): Double {
@@ -499,6 +506,22 @@ class ExpenseRepository {
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
         }
+    }
+}
+
+private data class ExpenseResponses(
+    val serviceRecords: Response<List<ServiceRecord>>,
+    val repairRecords: Response<List<RepairRecord>>,
+    val upgradeRecords: Response<List<UpgradeRecord>>,
+    val fuelRecords: Response<List<FuelRecord>>,
+    val taxRecords: Response<List<TaxRecord>>
+)
+
+private fun <T> MutableList<String>.addIfFailed(label: String, response: Response<T>) {
+    if (!response.isSuccessful) {
+        val errorBody = response.errorBody()?.string()?.takeIf { it.isNotBlank() }
+        val detail = if (errorBody != null) "$label (${response.code()}): $errorBody" else "$label (${response.code()})"
+        add(detail)
     }
 }
 
