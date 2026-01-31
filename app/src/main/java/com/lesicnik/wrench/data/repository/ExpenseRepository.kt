@@ -54,6 +54,12 @@ class ExpenseRepository {
         fuelStatsCache.remove(vehicleId)
     }
 
+    fun clearAllCaches() {
+        expensesCache.clear()
+        fuelStatsCache.clear()
+        preloadingVehicles.clear()
+    }
+
     suspend fun preloadVehicleData(
         serverUrl: String,
         apiKey: String,

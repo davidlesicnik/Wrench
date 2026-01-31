@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.net.URI
 
 data class LoginUiState(
     val serverUrl: String = "",
@@ -83,10 +84,56 @@ class LoginViewModel(
     }
 
     private fun isHttpUrl(url: String): Boolean {
-        val normalizedUrl = url.trim().lowercase()
-        return normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("http://localhost") &&
-               !normalizedUrl.startsWith("http://127.0.0.1") && !normalizedUrl.startsWith("http://10.") &&
-               !normalizedUrl.startsWith("http://192.168.") && !normalizedUrl.startsWith("http://172.")
+        return url.trim().lowercase().startsWith("http://")
+    }
+
+    private fun isLocalHttpUrl(url: String): Boolean {
+        val uri = try {
+            URI(url.trim())
+        } catch (_: Exception) {
+            return false
+        }
+
+        if (uri.scheme?.lowercase() != "http") return false
+        val host = uri.host ?: return false
+        val normalizedHost = host.trim().lowercase()
+
+        if (normalizedHost == "localhost") return true
+
+        val hostNoBrackets = normalizedHost.removePrefix("[").removeSuffix("]")
+        return isLocalIpv4(hostNoBrackets) || isLocalIpv6(hostNoBrackets)
+    }
+
+    private fun isLocalIpv4(host: String): Boolean {
+        val parts = host.split(".")
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() ?: return false }
+        if (octets.any { it !in 0..255 }) return false
+
+        val first = octets[0]
+        val second = octets[1]
+
+        return when {
+            first == 127 -> true // Loopback 127.0.0.0/8
+            first == 10 -> true // 10.0.0.0/8
+            first == 192 && second == 168 -> true // 192.168.0.0/16
+            first == 172 && second in 16..31 -> true // 172.16.0.0/12
+            first == 169 && second == 254 -> true // Link-local 169.254.0.0/16
+            else -> false
+        }
+    }
+
+    private fun isLocalIpv6(host: String): Boolean {
+        val normalized = host.lowercase()
+        if (normalized == "::1") return true // Loopback
+        if (normalized.startsWith("fe8") || normalized.startsWith("fe9") ||
+            normalized.startsWith("fea") || normalized.startsWith("feb")) {
+            return true // Link-local fe80::/10
+        }
+        if (normalized.startsWith("fc") || normalized.startsWith("fd")) {
+            return true // Unique local fc00::/7
+        }
+        return false
     }
 
     fun login(autoLogin: Boolean = false) {
@@ -102,10 +149,18 @@ class LoginViewModel(
             return
         }
 
-        // Check if URL is HTTP and show warning (only for non-auto-login)
-        if (!autoLogin && isHttpUrl(state.serverUrl)) {
-            _uiState.value = state.copy(showHttpWarning = true, pendingHttpLogin = true)
-            return
+        // Allow HTTP only for local addresses; show warning for local HTTP opt-in
+        if (isHttpUrl(state.serverUrl)) {
+            if (!isLocalHttpUrl(state.serverUrl)) {
+                _uiState.value = state.copy(
+                    errorMessage = "Insecure HTTP is only allowed for local network addresses"
+                )
+                return
+            }
+            if (!autoLogin) {
+                _uiState.value = state.copy(showHttpWarning = true, pendingHttpLogin = true)
+                return
+            }
         }
 
         performLogin(autoLogin)

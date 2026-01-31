@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lesicnik.wrench.data.remote.Vehicle
+import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
@@ -70,6 +71,8 @@ class VehiclesViewModel(
     fun logout() {
         viewModelScope.launch {
             credentialsRepository.deleteCredentials()
+            expenseRepository.clearAllCaches()
+            NetworkModule.clearCache()
             _uiState.value = _uiState.value.copy(isLoggedOut = true)
         }
     }
