@@ -32,7 +32,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      - name: Build (manual)
+        run: ./gradlew --no-daemon :app:assembleDebug -x kspDebugKotlin -x kspDebugJava
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
