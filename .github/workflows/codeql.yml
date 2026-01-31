@@ -32,13 +32,9 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ github.actor == 'dependabot[bot]' && 'none' || 'manual' }}
       - name: Build (manual)
-        run: |
-          set -euo pipefail
-          if ./gradlew -q tasks --all | grep -q "kspDebugKotlin"; then
-            ./gradlew --no-daemon :app:assembleDebug -x kspDebugKotlin
-          else
-            ./gradlew --no-daemon :app:assembleDebug
-          fi
+        if: ${{ github.actor != 'dependabot[bot]' }}
+        run: ./gradlew --no-daemon :app:assembleDebug
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
