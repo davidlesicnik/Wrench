@@ -150,6 +150,9 @@ fun VehiclesScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         items(ownedVehicles, key = { it.id }) { vehicle ->
+                            LaunchedEffect(vehicle.id) {
+                                viewModel.preloadVehicleData(vehicle.id)
+                            }
                             VehicleCard(
                                 vehicle = vehicle,
                                 serverUrl = uiState.serverUrl,
@@ -199,6 +202,9 @@ fun VehiclesScreen(
                                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
                                                 soldVehicles.forEach { vehicle ->
+                                                    LaunchedEffect(vehicle.id) {
+                                                        viewModel.preloadVehicleData(vehicle.id)
+                                                    }
                                                     VehicleCard(
                                                         vehicle = vehicle,
                                                         serverUrl = uiState.serverUrl,

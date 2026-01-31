@@ -20,6 +20,12 @@ class ExpenseRepository {
     // Cache expenses per vehicle
     private val expensesCache = mutableMapOf<Int, List<Expense>>()
 
+    // Cache fuel statistics per vehicle
+    private val fuelStatsCache = mutableMapOf<Int, FuelStatistics>()
+
+    // Track which vehicles are currently being preloaded to avoid duplicate requests
+    private val preloadingVehicles = mutableSetOf<Int>()
+
     private val dateFormatters = listOf(
         DateTimeFormatter.ofPattern("d. MM. yyyy"),           // 4. 02. 2025 (LubeLogger format)
         DateTimeFormatter.ofPattern("d. M. yyyy"),            // 4. 2. 2025
@@ -39,8 +45,46 @@ class ExpenseRepository {
         return expensesCache[vehicleId]
     }
 
+    fun getCachedFuelStatistics(vehicleId: Int): FuelStatistics? {
+        return fuelStatsCache[vehicleId]
+    }
+
     fun invalidateCache(vehicleId: Int) {
         expensesCache.remove(vehicleId)
+        fuelStatsCache.remove(vehicleId)
+    }
+
+    suspend fun preloadVehicleData(
+        serverUrl: String,
+        apiKey: String,
+        vehicleId: Int
+    ) {
+        // Skip if already cached or currently preloading
+        if (expensesCache.containsKey(vehicleId) && fuelStatsCache.containsKey(vehicleId)) {
+            return
+        }
+        if (!preloadingVehicles.add(vehicleId)) {
+            return // Already preloading this vehicle
+        }
+
+        try {
+            coroutineScope {
+                val expensesDeferred = async {
+                    if (!expensesCache.containsKey(vehicleId)) {
+                        getExpenses(serverUrl, apiKey, vehicleId)
+                    }
+                }
+                val statsDeferred = async {
+                    if (!fuelStatsCache.containsKey(vehicleId)) {
+                        getFuelStatistics(serverUrl, apiKey, vehicleId)
+                    }
+                }
+                expensesDeferred.await()
+                statsDeferred.await()
+            }
+        } finally {
+            preloadingVehicles.remove(vehicleId)
+        }
     }
 
     suspend fun getExpenses(
@@ -381,8 +425,16 @@ class ExpenseRepository {
     suspend fun getFuelStatistics(
         serverUrl: String,
         apiKey: String,
-        vehicleId: Int
+        vehicleId: Int,
+        forceRefresh: Boolean = false
     ): ApiResult<FuelStatistics> {
+        // Return cached data if available and not forcing refresh
+        if (!forceRefresh) {
+            fuelStatsCache[vehicleId]?.let { cached ->
+                return ApiResult.Success(cached)
+            }
+        }
+
         return try {
             val api = LubeLoggerApi.create(serverUrl)
             val response = api.getFuelRecords(apiKey, vehicleId)
@@ -431,13 +483,13 @@ class ExpenseRepository {
             // Get the last odometer reading (highest odometer value)
             val lastOdometer = sortedFuel.lastOrNull()?.let { parseMileage(it.odometer) }
 
-            ApiResult.Success(
-                FuelStatistics(
-                    averageFuelConsumption = averageFuelEconomy,
-                    lastFuelConsumption = lastFuelEconomy,
-                    lastOdometer = lastOdometer
-                )
+            val stats = FuelStatistics(
+                averageFuelConsumption = averageFuelEconomy,
+                lastFuelConsumption = lastFuelEconomy,
+                lastOdometer = lastOdometer
             )
+            fuelStatsCache[vehicleId] = stats
+            ApiResult.Success(stats)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
         }

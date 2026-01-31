@@ -34,8 +34,22 @@ class HomeViewModel(
         loadStatistics()
     }
 
-    fun loadStatistics() {
+    fun loadStatistics(forceRefresh: Boolean = false) {
         viewModelScope.launch {
+            // Check if we have cached data available
+            val cachedStats = expenseRepository.getCachedFuelStatistics(vehicleId)
+            val cachedExpenses = expenseRepository.getCachedExpenses(vehicleId)
+
+            // If we have cached data and not forcing refresh, use it immediately
+            if (!forceRefresh && cachedStats != null && cachedExpenses != null) {
+                val stats = calculateMonthlyCosts(cachedStats, cachedExpenses)
+                _uiState.value = _uiState.value.copy(
+                    fuelStatistics = stats,
+                    isLoading = false
+                )
+                return@launch
+            }
+
             // Only show loading if we don't have data yet
             val hasData = _uiState.value.fuelStatistics != null
             if (!hasData) {
@@ -56,7 +70,8 @@ class HomeViewModel(
                 expenseRepository.getFuelStatistics(
                     credentials.serverUrl,
                     credentials.apiKey,
-                    vehicleId
+                    vehicleId,
+                    forceRefresh = forceRefresh
                 )
             }
             val expensesDeferred = async {
@@ -64,7 +79,7 @@ class HomeViewModel(
                     credentials.serverUrl,
                     credentials.apiKey,
                     vehicleId,
-                    forceRefresh = true
+                    forceRefresh = forceRefresh
                 )
             }
 
@@ -73,32 +88,8 @@ class HomeViewModel(
 
             when (statsResult) {
                 is ApiResult.Success -> {
-                    // Calculate monthly costs from expenses
                     val stats = if (expensesResult is ApiResult.Success) {
-                        val expenses = expensesResult.data
-                        val now = LocalDate.now()
-                        val thisMonthStart = now.withDayOfMonth(1)
-                        val lastMonthStart = thisMonthStart.minusMonths(1)
-
-                        val thisMonthExpenses = expenses.filter { it.date >= thisMonthStart }
-                        val lastMonthExpenses = expenses.filter {
-                            it.date >= lastMonthStart && it.date < thisMonthStart
-                        }
-
-                        statsResult.data.copy(
-                            thisMonthFuelCost = thisMonthExpenses
-                                .filter { it.type == ExpenseType.FUEL }
-                                .sumOf { it.cost },
-                            thisMonthOtherCost = thisMonthExpenses
-                                .filter { it.type != ExpenseType.FUEL }
-                                .sumOf { it.cost },
-                            lastMonthFuelCost = lastMonthExpenses
-                                .filter { it.type == ExpenseType.FUEL }
-                                .sumOf { it.cost },
-                            lastMonthOtherCost = lastMonthExpenses
-                                .filter { it.type != ExpenseType.FUEL }
-                                .sumOf { it.cost }
-                        )
+                        calculateMonthlyCosts(statsResult.data, expensesResult.data)
                     } else {
                         statsResult.data
                     }
@@ -116,6 +107,35 @@ class HomeViewModel(
                 }
             }
         }
+    }
+
+    private fun calculateMonthlyCosts(
+        stats: FuelStatistics,
+        expenses: List<com.lesicnik.wrench.data.remote.records.Expense>
+    ): FuelStatistics {
+        val now = LocalDate.now()
+        val thisMonthStart = now.withDayOfMonth(1)
+        val lastMonthStart = thisMonthStart.minusMonths(1)
+
+        val thisMonthExpenses = expenses.filter { it.date >= thisMonthStart }
+        val lastMonthExpenses = expenses.filter {
+            it.date >= lastMonthStart && it.date < thisMonthStart
+        }
+
+        return stats.copy(
+            thisMonthFuelCost = thisMonthExpenses
+                .filter { it.type == ExpenseType.FUEL }
+                .sumOf { it.cost },
+            thisMonthOtherCost = thisMonthExpenses
+                .filter { it.type != ExpenseType.FUEL }
+                .sumOf { it.cost },
+            lastMonthFuelCost = lastMonthExpenses
+                .filter { it.type == ExpenseType.FUEL }
+                .sumOf { it.cost },
+            lastMonthOtherCost = lastMonthExpenses
+                .filter { it.type != ExpenseType.FUEL }
+                .sumOf { it.cost }
+        )
     }
 
     fun clearError() {

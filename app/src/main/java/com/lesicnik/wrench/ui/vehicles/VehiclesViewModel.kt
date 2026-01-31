@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
+import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,8 @@ data class VehiclesUiState(
 
 class VehiclesViewModel(
     private val credentialsRepository: CredentialsRepository,
-    private val vehicleRepository: VehicleRepository
+    private val vehicleRepository: VehicleRepository,
+    private val expenseRepository: ExpenseRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(VehiclesUiState())
@@ -76,13 +78,27 @@ class VehiclesViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun preloadVehicleData(vehicleId: Int) {
+        val state = _uiState.value
+        if (state.serverUrl.isBlank() || state.apiKey.isBlank()) return
+
+        viewModelScope.launch {
+            expenseRepository.preloadVehicleData(
+                state.serverUrl,
+                state.apiKey,
+                vehicleId
+            )
+        }
+    }
+
     class Factory(
         private val credentialsRepository: CredentialsRepository,
-        private val vehicleRepository: VehicleRepository
+        private val vehicleRepository: VehicleRepository,
+        private val expenseRepository: ExpenseRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return VehiclesViewModel(credentialsRepository, vehicleRepository) as T
+            return VehiclesViewModel(credentialsRepository, vehicleRepository, expenseRepository) as T
         }
     }
 }

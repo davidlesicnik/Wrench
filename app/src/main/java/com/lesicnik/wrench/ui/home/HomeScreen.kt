@@ -152,7 +152,7 @@ fun HomeScreen(
                 uiState.errorMessage != null && uiState.fuelStatistics == null -> {
                     ErrorContent(
                         message = uiState.errorMessage ?: "Unknown error",
-                        onRetry = { viewModel.loadStatistics() },
+                        onRetry = { viewModel.loadStatistics(forceRefresh = true) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }

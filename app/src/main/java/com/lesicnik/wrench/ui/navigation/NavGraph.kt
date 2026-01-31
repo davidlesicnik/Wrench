@@ -77,7 +77,7 @@ fun WrenchNavGraph(
             popExitTransition = { ExitTransition.None }
         ) {
             val viewModel: VehiclesViewModel = viewModel(
-                factory = VehiclesViewModel.Factory(credentialsRepository, vehicleRepository)
+                factory = VehiclesViewModel.Factory(credentialsRepository, vehicleRepository, expenseRepository)
             )
             VehiclesScreen(
                 viewModel = viewModel,
