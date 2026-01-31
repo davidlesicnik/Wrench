@@ -17,7 +17,7 @@ kotlinxSerialization = "1.6.3"
 lifecycleViewmodelCompose = "2.6.1"
 coil = "2.6.0"
 securityCrypto = "1.1.0-alpha06"
-robolectric = "4.11.1"
+robolectric = "4.16.1"
 androidxTestCore = "1.5.0"
 coroutinesTest = "1.7.3"
 
