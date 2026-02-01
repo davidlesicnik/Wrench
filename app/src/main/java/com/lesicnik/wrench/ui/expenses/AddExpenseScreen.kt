@@ -42,9 +42,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +74,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
@@ -101,6 +105,10 @@ fun AddExpenseScreen(
     val hapticFeedback = LocalHapticFeedback.current
     var showDatePicker by remember { mutableStateOf(false) }
     val isKeyboardOpen by rememberKeyboardVisibility()
+
+    // Detect compact screen (e.g., Galaxy Flip cover screen ~524dp)
+    val configuration = LocalConfiguration.current
+    val isCompactScreen = configuration.screenHeightDp < 550
 
     val expenseTypeOrder = remember {
         listOf(
@@ -139,21 +147,23 @@ fun AddExpenseScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Add Expense") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            if (!isCompactScreen) {
+                TopAppBar(
+                    title = { Text("Add Expense") },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 )
-            )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -168,7 +178,7 @@ fun AddExpenseScreen(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
+                    .padding(if (isCompactScreen) 8.dp else 16.dp)
             ) {
                 // Form Fields
             Card(
@@ -413,8 +423,8 @@ fun AddExpenseScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(if (isCompactScreen) 8.dp else 16.dp),
+                verticalArrangement = Arrangement.spacedBy(if (isCompactScreen) 8.dp else 16.dp)
             ) {
                 // Expense Type Selector (hidden when keyboard is open)
                 AnimatedVisibility(
@@ -422,32 +432,46 @@ fun AddExpenseScreen(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
+                    if (isCompactScreen) {
+                        // Compact dropdown for small screens
+                        CompactExpenseTypeSelector(
+                            selectedType = uiState.expenseType,
+                            expenseTypes = expenseTypeOrder,
+                            onTypeSelected = { type ->
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.onExpenseTypeChanged(type)
+                            },
+                            enabled = !uiState.isLoading
+                        )
+                    } else {
+                        // Full chip card for regular screens
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Text(
-                                text = "Expense Type",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                            Column(
+                                modifier = Modifier.padding(16.dp)
                             ) {
-                                expenseTypeOrder.forEach { type ->
-                                    ExpenseTypeChip(
-                                        type = type,
-                                        selected = uiState.expenseType == type,
-                                        onClick = {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            viewModel.onExpenseTypeChanged(type)
-                                        }
-                                    )
+                                Text(
+                                    text = "Expense Type",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    expenseTypeOrder.forEach { type ->
+                                        ExpenseTypeChip(
+                                            type = type,
+                                            selected = uiState.expenseType == type,
+                                            onClick = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                viewModel.onExpenseTypeChanged(type)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -459,7 +483,7 @@ fun AddExpenseScreen(
                     onClick = { viewModel.saveExpense() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(if (isCompactScreen) 40.dp else 50.dp),
                     enabled = !uiState.isLoading,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = animatedButtonColor
@@ -590,5 +614,96 @@ private fun ExpenseTypeChip(
             style = MaterialTheme.typography.labelSmall,
             color = labelColor
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CompactExpenseTypeSelector(
+    selectedType: ExpenseType,
+    expenseTypes: List<ExpenseType>,
+    onTypeSelected: (ExpenseType) -> Unit,
+    enabled: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedStyle = selectedType.getStyle()
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { if (enabled) expanded = it }
+    ) {
+        OutlinedTextField(
+            value = selectedStyle.label,
+            onValueChange = {},
+            readOnly = true,
+            enabled = enabled,
+            leadingIcon = {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(
+                            color = selectedStyle.color,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = selectedStyle.icon,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth()
+        )
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            expenseTypes.forEach { type ->
+                val style = type.getStyle()
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(
+                                        color = style.color,
+                                        shape = CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = style.icon,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Text(
+                                text = style.label,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    },
+                    onClick = {
+                        onTypeSelected(type)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 }
