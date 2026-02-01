@@ -3,18 +3,25 @@ package com.lesicnik.wrench.ui.navigation
 import android.net.Uri
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
-import com.lesicnik.wrench.ui.expenses.AddExpenseScreen
-import com.lesicnik.wrench.ui.expenses.AddExpenseViewModel
+import com.lesicnik.wrench.ui.expenses.AddEditExpenseScreen
+import com.lesicnik.wrench.ui.expenses.AddEditExpenseViewModel
 import com.lesicnik.wrench.ui.expenses.ExpensesScreen
 import com.lesicnik.wrench.ui.expenses.ExpensesViewModel
 import com.lesicnik.wrench.ui.home.HomeScreen
@@ -40,6 +47,11 @@ sealed class Screen(val route: String) {
     data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}") {
         fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?): String {
             return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}"
+        }
+    }
+    data object EditExpense : Screen("editExpense/{vehicleId}/{odometerUnit}/{expenseId}/{expenseType}") {
+        fun createRoute(vehicleId: Int, odometerUnit: String, expenseId: Int, expenseType: ExpenseType): String {
+            return "editExpense/$vehicleId/${Uri.encode(odometerUnit)}/$expenseId/${expenseType.name}"
         }
     }
 }
@@ -166,6 +178,9 @@ fun WrenchNavGraph(
                 onNavigateToHome = { navController.popBackStack() },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
+                },
+                onEditExpense = { expense ->
+                    navController.navigate(Screen.EditExpense.createRoute(vehicleId, odometerUnit, expense.id, expense.type))
                 }
             )
         }
@@ -177,27 +192,67 @@ fun WrenchNavGraph(
                 navArgument("odometerUnit") { type = NavType.StringType },
                 navArgument("lastOdometer") { type = NavType.IntType }
             ),
-            enterTransition = { EnterTransition.None },
+            enterTransition = { fadeIn(animationSpec = tween(150)) },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None }
+            popExitTransition = { slideOutHorizontally(animationSpec = tween(250)) { it / 2 } + fadeOut(animationSpec = tween(250)) }
         ) { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
             val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
             val lastOdometer = backStackEntry.arguments?.getInt("lastOdometer")?.takeIf { it >= 0 }
 
-            val viewModel: AddExpenseViewModel = viewModel(
-                factory = AddExpenseViewModel.Factory(
+            val viewModel: AddEditExpenseViewModel = viewModel(
+                factory = AddEditExpenseViewModel.Factory(
                     credentialsRepository = credentialsRepository,
                     expenseRepository = expenseRepository,
                     vehicleId = vehicleId
                 )
             )
 
-            AddExpenseScreen(
+            AddEditExpenseScreen(
                 viewModel = viewModel,
                 odometerUnit = odometerUnit,
                 lastOdometer = lastOdometer,
+                onNavigateBack = { navController.popBackStack() },
+                onExpenseSaved = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.EditExpense.route,
+            arguments = listOf(
+                navArgument("vehicleId") { type = NavType.IntType },
+                navArgument("odometerUnit") { type = NavType.StringType },
+                navArgument("expenseId") { type = NavType.IntType },
+                navArgument("expenseType") { type = NavType.StringType }
+            ),
+            enterTransition = { fadeIn(animationSpec = tween(150)) },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { slideOutHorizontally(animationSpec = tween(250)) { it / 2 } + fadeOut(animationSpec = tween(250)) }
+        ) { backStackEntry ->
+            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
+            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val expenseId = backStackEntry.arguments?.getInt("expenseId") ?: return@composable
+            val expenseTypeStr = backStackEntry.arguments?.getString("expenseType") ?: return@composable
+            val expenseType = ExpenseType.valueOf(expenseTypeStr)
+
+            val viewModel: AddEditExpenseViewModel = viewModel(
+                factory = AddEditExpenseViewModel.Factory(
+                    credentialsRepository = credentialsRepository,
+                    expenseRepository = expenseRepository,
+                    vehicleId = vehicleId
+                )
+            )
+
+            // Initialize for edit mode
+            LaunchedEffect(Unit) {
+                viewModel.initializeForEdit(expenseId, expenseType)
+            }
+
+            AddEditExpenseScreen(
+                viewModel = viewModel,
+                odometerUnit = odometerUnit,
                 onNavigateBack = { navController.popBackStack() },
                 onExpenseSaved = { navController.popBackStack() }
             )
