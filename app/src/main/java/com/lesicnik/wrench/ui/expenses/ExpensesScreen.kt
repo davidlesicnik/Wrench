@@ -439,11 +439,28 @@ private fun ExpenseCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = expense.date.format(dateFormatter),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Date and odometer on the same line
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = expense.date.format(dateFormatter),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    expense.odometer?.let { odometer ->
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${NumberFormat.getNumberInstance().format(odometer)} $odometerUnit",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
@@ -454,47 +471,35 @@ private fun ExpenseCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                // Fuel-specific details: liters and economy
+                if (expense.liters != null || expense.fuelEconomy != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    expense.odometer?.let { odometer ->
-                        Text(
-                            text = "${NumberFormat.getNumberInstance().format(odometer)} $odometerUnit",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    expense.liters?.let { liters ->
-                        if (expense.odometer != null) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        expense.liters?.let { liters ->
                             Text(
-                                text = "•",
+                                text = String.format(Locale.getDefault(), "%.2f L", liters),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Text(
-                            text = String.format(Locale.getDefault(), "%.2f L", liters),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
 
-                    expense.fuelEconomy?.let { economy ->
-                        if (expense.odometer != null || expense.liters != null) {
+                        expense.fuelEconomy?.let { economy ->
+                            if (expense.liters != null) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Text(
-                                text = "•",
+                                text = String.format(Locale.getDefault(), "%.1f L/100km", economy),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Text(
-                            text = String.format(Locale.getDefault(), "%.1f L/100km", economy),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
