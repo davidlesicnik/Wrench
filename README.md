@@ -7,9 +7,10 @@ Wrench is an Android companion app for [LubeLogger](https://github.com/hargata/l
 * **API Authentication:** Connect using the server URL and API key.
 * **Vehicle Overview:** View all of your vehicles.
 * **Expense Management:**
-* List existing expenses.
-* Add new entries.
-* Delete records.
+  * List existing expenses.
+  * Add new entries.
+  * Edit existing expenses
+  * Delete records.
 
 ## Installation & Build
 

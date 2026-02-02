@@ -17,10 +17,7 @@ data class ExpensesUiState(
     val expenses: List<Expense> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
-    val selectedFilters: Set<ExpenseType> = ExpenseType.entries.toSet(),
-    val expenseToDelete: Expense? = null,
-    val isDeleting: Boolean = false,
-    val deleteSuccess: Boolean = false
+    val selectedFilters: Set<ExpenseType> = ExpenseType.entries.toSet()
 ) {
     val filteredExpenses: List<Expense>
         get() = if (selectedFilters.size == ExpenseType.entries.size) {
@@ -108,62 +105,6 @@ class ExpensesViewModel(
 
     fun clearAllFilters() {
         _uiState.value = _uiState.value.copy(selectedFilters = emptySet())
-    }
-
-    fun requestDelete(expense: Expense) {
-        _uiState.value = _uiState.value.copy(expenseToDelete = expense)
-    }
-
-    fun cancelDelete() {
-        _uiState.value = _uiState.value.copy(expenseToDelete = null)
-    }
-
-    fun confirmDelete() {
-        val expense = _uiState.value.expenseToDelete ?: return
-
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isDeleting = true)
-
-            val credentials = credentialsRepository.getCredentials()
-            if (credentials == null) {
-                _uiState.value = _uiState.value.copy(
-                    isDeleting = false,
-                    expenseToDelete = null,
-                    errorMessage = "Not logged in"
-                )
-                return@launch
-            }
-
-            when (val result = expenseRepository.deleteExpense(
-                credentials.serverUrl,
-                credentials.apiKey,
-                vehicleId,
-                expense.id,
-                expense.type
-            )) {
-                is ApiResult.Success -> {
-                    _uiState.value = _uiState.value.copy(
-                        expenses = _uiState.value.expenses.filter {
-                            !(it.id == expense.id && it.type == expense.type)
-                        },
-                        isDeleting = false,
-                        expenseToDelete = null,
-                        deleteSuccess = true
-                    )
-                }
-                is ApiResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        isDeleting = false,
-                        expenseToDelete = null,
-                        errorMessage = result.message
-                    )
-                }
-            }
-        }
-    }
-
-    fun clearDeleteSuccess() {
-        _uiState.value = _uiState.value.copy(deleteSuccess = false)
     }
 
     class Factory(
