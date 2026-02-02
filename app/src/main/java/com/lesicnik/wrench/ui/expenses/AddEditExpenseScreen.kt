@@ -164,6 +164,11 @@ fun AddEditExpenseScreen(
         }
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
     Scaffold(
         topBar = {
             if (!isCompactScreen) {
@@ -551,6 +556,7 @@ fun AddEditExpenseScreen(
             }
         }
     }
+    } // Box
 
     // Date Picker Dialog
     if (showDatePicker) {
