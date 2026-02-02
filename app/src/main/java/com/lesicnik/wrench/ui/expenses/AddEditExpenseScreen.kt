@@ -286,6 +286,12 @@ fun AddEditExpenseScreen(
                     // Fuel-specific fields
                     AnimatedVisibility(visible = uiState.expenseType == ExpenseType.FUEL) {
                         Column {
+                            // Fuel - POS style (type digits, auto-formats with decimal)
+                            val fuelTransformation = remember {
+                                FuelPosTransformation(
+                                    DecimalFormatSymbols.getInstance().decimalSeparator
+                                )
+                            }
                             OutlinedTextField(
                                 value = uiState.fuelConsumed,
                                 onValueChange = viewModel::onFuelConsumedChanged,
@@ -296,8 +302,9 @@ fun AddEditExpenseScreen(
                                         contentDescription = null
                                     )
                                 },
+                                visualTransformation = fuelTransformation,
                                 keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Decimal,
+                                    keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
                                 ),
                                 keyboardActions = KeyboardActions(
@@ -747,6 +754,43 @@ private fun ExpenseTypeChip(
  * e.g., "4555" displays as "45,55" (or "45.55" depending on locale)
  */
 private class CurrencyPosTransformation(
+    private val decimalSeparator: Char
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text
+
+        if (digits.isEmpty()) {
+            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
+        }
+
+        // Pad to at least 3 digits for proper formatting
+        val padded = digits.padStart(3, '0')
+        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
+        val decPart = padded.takeLast(2)
+        val formatted = "$intPart$decimalSeparator$decPart"
+
+        return TransformedText(
+            AnnotatedString(formatted),
+            object : OffsetMapping {
+                override fun originalToTransformed(offset: Int): Int {
+                    // Map cursor position from raw digits to formatted string
+                    return formatted.length
+                }
+
+                override fun transformedToOriginal(offset: Int): Int {
+                    // Map cursor position from formatted string to raw digits
+                    return digits.length
+                }
+            }
+        )
+    }
+}
+
+/**
+ * POS-style visual transformation: displays raw digits as formatted fuel liters
+ * e.g., "3198" displays as "31,98" (or "31.98" depending on locale)
+ */
+private class FuelPosTransformation(
     private val decimalSeparator: Char
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {

@@ -41,13 +41,15 @@ data class AddEditExpenseUiState(
             val original = originalExpense ?: return false
             // Convert original cost to POS-style digits for comparison (e.g., 45.55 -> "4555")
             val originalCostDigits = ((original.cost * 100).toLong()).toString()
+            // Convert original liters to POS-style digits for comparison (e.g., 31.98 -> "3198")
+            val originalFuelDigits = original.liters?.let { ((it * 100).toLong()).toString() } ?: ""
             return expenseType != original.type ||
                     date != original.date ||
                     odometer != (original.odometer?.toString() ?: "") ||
                     description != original.description ||
                     cost != originalCostDigits ||
                     notes != (original.notes ?: "") ||
-                    fuelConsumed != (original.liters?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "")
+                    fuelConsumed != originalFuelDigits
         }
 }
 
@@ -65,6 +67,8 @@ class AddEditExpenseViewModel(
         if (expense != null) {
             // Convert cost to POS-style digits (e.g., 45.55 -> "4555")
             val costDigits = ((expense.cost * 100).toLong()).toString()
+            // Convert liters to POS-style digits (e.g., 31.98 -> "3198")
+            val fuelDigits = expense.liters?.let { ((it * 100).toLong()).toString() } ?: ""
             _uiState.value = AddEditExpenseUiState(
                 expenseType = expense.type,
                 date = expense.date,
@@ -72,7 +76,7 @@ class AddEditExpenseViewModel(
                 description = expense.description,
                 cost = costDigits,
                 notes = expense.notes ?: "",
-                fuelConsumed = expense.liters?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "",
+                fuelConsumed = fuelDigits,
                 isFillToFull = true,
                 isMissedFuelUp = false,
                 isRecurring = false,
@@ -123,15 +127,23 @@ class AddEditExpenseViewModel(
     }
 
     fun onFuelConsumedChanged(fuelConsumed: String) {
-        // Allow digits and one decimal separator (comma or period, normalized to period)
-        val filtered = fuelConsumed.filter { it.isDigit() || it == '.' || it == ',' }
-            .replace(',', '.')
-        val parts = filtered.split(".")
-        val sanitized = when {
-            parts.size > 2 -> parts[0] + "." + parts.drop(1).joinToString("")
-            else -> filtered
-        }
-        _uiState.value = _uiState.value.copy(fuelConsumed = sanitized)
+        // POS-style: store only digits, visual transformation handles display
+        val digits = fuelConsumed.filter { it.isDigit() }
+        // Limit to reasonable length (max 9999.99 liters = 6 digits)
+        val limited = if (digits.length > 6) digits.takeLast(6) else digits
+        // Remove leading zeros (but keep at least one digit if all zeros)
+        val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
+        _uiState.value = _uiState.value.copy(fuelConsumed = trimmed)
+    }
+
+    // Convert stored digits to decimal for saving (e.g., "3198" -> 31.98)
+    fun getFuelConsumedAsDecimal(): Double? {
+        val digits = _uiState.value.fuelConsumed
+        if (digits.isEmpty()) return null
+        val padded = digits.padStart(3, '0')
+        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
+        val decPart = padded.takeLast(2)
+        return "$intPart.$decPart".toDoubleOrNull()
     }
 
     fun onFillToFullChanged(isFillToFull: Boolean) {
@@ -225,7 +237,7 @@ class AddEditExpenseViewModel(
         }
 
         if (state.expenseType == ExpenseType.FUEL) {
-            val fuelConsumed = state.fuelConsumed.toDoubleOrNull()
+            val fuelConsumed = getFuelConsumedAsDecimal()
             if (fuelConsumed == null || fuelConsumed <= 0) {
                 _uiState.value = state.copy(errorMessage = "Please enter fuel amount")
                 return
@@ -258,7 +270,7 @@ class AddEditExpenseViewModel(
                     description = if (state.expenseType == ExpenseType.FUEL) "Fuel" else state.description,
                     cost = cost,
                     notes = state.notes,
-                    fuelConsumed = state.fuelConsumed.toDoubleOrNull(),
+                    fuelConsumed = getFuelConsumedAsDecimal(),
                     isFillToFull = state.isFillToFull,
                     isMissedFuelUp = state.isMissedFuelUp,
                     isRecurring = state.isRecurring
@@ -275,7 +287,7 @@ class AddEditExpenseViewModel(
                     description = if (state.expenseType == ExpenseType.FUEL) "Fuel" else state.description,
                     cost = cost,
                     notes = state.notes,
-                    fuelConsumed = state.fuelConsumed.toDoubleOrNull(),
+                    fuelConsumed = getFuelConsumedAsDecimal(),
                     isFillToFull = state.isFillToFull,
                     isMissedFuelUp = state.isMissedFuelUp,
                     isRecurring = state.isRecurring
