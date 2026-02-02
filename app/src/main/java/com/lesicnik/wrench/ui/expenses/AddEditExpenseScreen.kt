@@ -31,7 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -76,9 +76,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import java.text.DecimalFormatSymbols
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
@@ -379,19 +384,25 @@ fun AddEditExpenseScreen(
                         )
                     }
 
-                    // Cost
+                    // Cost - POS style (type digits, auto-formats with decimal)
+                    val currencyTransformation = remember {
+                        CurrencyPosTransformation(
+                            DecimalFormatSymbols.getInstance().decimalSeparator
+                        )
+                    }
                     OutlinedTextField(
                         value = uiState.cost,
                         onValueChange = viewModel::onCostChanged,
                         label = { Text("Cost") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.AttachMoney,
+                                imageVector = Icons.Default.Payments,
                                 contentDescription = null
                             )
                         },
+                        visualTransformation = currencyTransformation,
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
+                            keyboardType = KeyboardType.Number,
                             imeAction = ImeAction.Next
                         ),
                         keyboardActions = KeyboardActions(
@@ -727,6 +738,43 @@ private fun ExpenseTypeChip(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = labelColor
+        )
+    }
+}
+
+/**
+ * POS-style visual transformation: displays raw digits as formatted currency
+ * e.g., "4555" displays as "45,55" (or "45.55" depending on locale)
+ */
+private class CurrencyPosTransformation(
+    private val decimalSeparator: Char
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text
+
+        if (digits.isEmpty()) {
+            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
+        }
+
+        // Pad to at least 3 digits for proper formatting
+        val padded = digits.padStart(3, '0')
+        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
+        val decPart = padded.takeLast(2)
+        val formatted = "$intPart$decimalSeparator$decPart"
+
+        return TransformedText(
+            AnnotatedString(formatted),
+            object : OffsetMapping {
+                override fun originalToTransformed(offset: Int): Int {
+                    // Map cursor position from raw digits to formatted string
+                    return formatted.length
+                }
+
+                override fun transformedToOriginal(offset: Int): Int {
+                    // Map cursor position from formatted string to raw digits
+                    return digits.length
+                }
+            }
         )
     }
 }

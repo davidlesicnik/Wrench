@@ -274,11 +274,16 @@ class ExpenseRepository {
         return if (parsed == 0) null else parsed
     }
 
+    // LubeLogger returns costs in cents (minor currency units)
+    private fun parseCost(value: String?): Double {
+        return parseNumber(value) / 100.0
+    }
+
     private fun ServiceRecord.toExpense() = Expense(
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.SERVICE,
         date = parseDate(date),
-        cost = parseNumber(cost),
+        cost = parseCost(cost),
         odometer = parseMileage(odometer),
         description = description ?: "Service",
         notes = notes
@@ -288,7 +293,7 @@ class ExpenseRepository {
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.REPAIR,
         date = parseDate(date),
-        cost = parseNumber(cost),
+        cost = parseCost(cost),
         odometer = parseMileage(odometer),
         description = description ?: "Repair",
         notes = notes
@@ -298,7 +303,7 @@ class ExpenseRepository {
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.UPGRADE,
         date = parseDate(date),
-        cost = parseNumber(cost),
+        cost = parseCost(cost),
         odometer = parseMileage(odometer),
         description = description ?: "Upgrade",
         notes = notes
@@ -308,7 +313,7 @@ class ExpenseRepository {
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.FUEL,
         date = parseDate(date),
-        cost = parseNumber(cost),
+        cost = parseCost(cost),
         odometer = parseMileage(odometer),
         description = "Fuel",
         notes = notes,
@@ -320,7 +325,7 @@ class ExpenseRepository {
         id = id.toIntOrNull() ?: 0,
         type = ExpenseType.TAX,
         date = parseDate(date),
-        cost = parseNumber(cost),
+        cost = parseCost(cost),
         odometer = null,
         description = description ?: "Tax",
         notes = notes
@@ -345,7 +350,9 @@ class ExpenseRepository {
             val api = NetworkModule.getApi(serverUrl)
             val dateString = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
             val odometerString = odometer?.toString() ?: ""
-            val costString = String.format(java.util.Locale.US, "%.2f", cost)
+            // LubeLogger expects cost in cents (minor currency units)
+            val costInCents = (cost * 100).toLong()
+            val costString = costInCents.toString()
 
             val response = when (type) {
                 ExpenseType.SERVICE -> api.addServiceRecord(
