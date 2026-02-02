@@ -55,15 +55,23 @@ class AddExpenseViewModel(
     }
 
     fun onCostChanged(cost: String) {
-        // Allow digits and one decimal separator (comma or period, normalized to period)
-        val filtered = cost.filter { it.isDigit() || it == '.' || it == ',' }
-            .replace(',', '.')
-        val parts = filtered.split(".")
-        val sanitized = when {
-            parts.size > 2 -> parts[0] + "." + parts.drop(1).joinToString("")
-            else -> filtered
-        }
-        _uiState.value = _uiState.value.copy(cost = sanitized)
+        // POS-style: store only digits, visual transformation handles display
+        val digits = cost.filter { it.isDigit() }
+        // Limit to reasonable length (max 99,999,999.99 = 10 digits)
+        val limited = if (digits.length > 10) digits.takeLast(10) else digits
+        // Remove leading zeros (but keep at least one digit if all zeros)
+        val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
+        _uiState.value = _uiState.value.copy(cost = trimmed)
+    }
+
+    // Convert stored digits to decimal for saving (e.g., "4555" -> 45.55)
+    fun getCostAsDecimal(): Double? {
+        val digits = _uiState.value.cost
+        if (digits.isEmpty()) return null
+        val padded = digits.padStart(3, '0')
+        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
+        val decPart = padded.takeLast(2)
+        return "$intPart.$decPart".toDoubleOrNull()
     }
 
     fun onNotesChanged(notes: String) {
@@ -101,8 +109,8 @@ class AddExpenseViewModel(
     fun saveExpense() {
         val state = _uiState.value
 
-        // Validation
-        val cost = state.cost.toDoubleOrNull()
+        // Validation - convert POS digits to decimal
+        val cost = getCostAsDecimal()
         if (cost == null || cost <= 0) {
             _uiState.value = state.copy(errorMessage = "Please enter a valid cost")
             return

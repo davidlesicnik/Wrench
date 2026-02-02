@@ -355,7 +355,7 @@ private fun DeleteConfirmationDialog(
     onDismiss: () -> Unit
 ) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
 
     AlertDialog(
         onDismissRequest = { if (!isDeleting) onDismiss() },
@@ -424,7 +424,7 @@ private fun ExpenseCard(
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
 
     Card(
         modifier = modifier.fillMaxWidth(),
