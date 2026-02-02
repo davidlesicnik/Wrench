@@ -156,6 +156,11 @@ fun AddEditExpenseScreen(
         }
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -528,6 +533,7 @@ fun AddEditExpenseScreen(
             }
         }
     }
+    } // Box
 
     // Date Picker Dialog
     if (showDatePicker) {

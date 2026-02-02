@@ -112,7 +112,10 @@ fun WrenchNavGraph(
                 navArgument("odometerUnit") { type = NavType.StringType }
             ),
             enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
+            exitTransition = {
+                // Keep screen visible while add expense screen slides in on top
+                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+            },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
@@ -150,7 +153,10 @@ fun WrenchNavGraph(
                 navArgument("odometerUnit") { type = NavType.StringType }
             ),
             enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
+            exitTransition = {
+                // Keep screen visible while edit screen slides in on top
+                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+            },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
@@ -192,10 +198,10 @@ fun WrenchNavGraph(
                 navArgument("odometerUnit") { type = NavType.StringType },
                 navArgument("lastOdometer") { type = NavType.IntType }
             ),
-            enterTransition = { fadeIn(animationSpec = tween(150)) },
+            enterTransition = { slideInHorizontally(animationSpec = tween(200)) { it } },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
-            popExitTransition = { slideOutHorizontally(animationSpec = tween(250)) { it / 2 } + fadeOut(animationSpec = tween(250)) }
+            popExitTransition = { slideOutHorizontally(animationSpec = tween(200)) { it } }
         ) { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
             val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
@@ -226,10 +232,10 @@ fun WrenchNavGraph(
                 navArgument("expenseId") { type = NavType.IntType },
                 navArgument("expenseType") { type = NavType.StringType }
             ),
-            enterTransition = { fadeIn(animationSpec = tween(150)) },
+            enterTransition = { slideInHorizontally(animationSpec = tween(200)) { it } },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
-            popExitTransition = { slideOutHorizontally(animationSpec = tween(250)) { it / 2 } + fadeOut(animationSpec = tween(250)) }
+            popExitTransition = { slideOutHorizontally(animationSpec = tween(200)) { it } }
         ) { backStackEntry ->
             val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
             val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
