@@ -180,7 +180,7 @@ private fun HomeContent(
     modifier: Modifier = Modifier
 ) {
     val stats = uiState.fuelStatistics
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
@@ -295,7 +295,7 @@ private fun CostsCard(
     lastMonthOther: Double,
     modifier: Modifier = Modifier
 ) {
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
 
     Card(
         modifier = modifier.fillMaxWidth(),

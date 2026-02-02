@@ -277,7 +277,6 @@ fun ExpensesScreen(
             onClearAll = { viewModel.clearAllFilters() }
         )
     }
-
 }
 
 @Composable
@@ -288,7 +287,7 @@ private fun ExpenseCard(
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
@@ -558,5 +557,4 @@ private fun FilterBottomSheet(
         }
     }
 }
-
 
