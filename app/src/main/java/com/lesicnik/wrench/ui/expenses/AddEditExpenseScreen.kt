@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.ui.expenses
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -90,11 +93,12 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddExpenseScreen(
-    viewModel: AddExpenseViewModel,
+fun AddEditExpenseScreen(
+    viewModel: AddEditExpenseViewModel,
     odometerUnit: String = "km",
     lastOdometer: Int? = null,
     onNavigateBack: () -> Unit,
@@ -129,9 +133,24 @@ fun AddExpenseScreen(
         label = "buttonColor"
     )
 
+    // Handle back button with discard dialog
+    BackHandler {
+        if (uiState.isEditMode && uiState.isDirty) {
+            viewModel.showDiscardDialog()
+        } else {
+            onNavigateBack()
+        }
+    }
+
     LaunchedEffect(uiState.isSaved) {
         if (uiState.isSaved) {
             onExpenseSaved()
+        }
+    }
+
+    LaunchedEffect(uiState.isDeleted) {
+        if (uiState.isDeleted) {
+            onNavigateBack()
         }
     }
 
@@ -142,16 +161,41 @@ fun AddExpenseScreen(
         }
     }
 
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Expense") },
+                title = { Text(if (uiState.isEditMode) "Edit Expense" else "Add Expense") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        if (uiState.isEditMode && uiState.isDirty) {
+                            viewModel.showDiscardDialog()
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
+                    }
+                },
+                actions = {
+                    if (uiState.isEditMode) {
+                        IconButton(
+                            onClick = { viewModel.showDeleteDialog() },
+                            enabled = !uiState.isLoading && !uiState.isDeleting
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -213,9 +257,11 @@ fun AddExpenseScreen(
                             value = uiState.odometer,
                             onValueChange = viewModel::onOdometerChanged,
                             label = { Text("Odometer ($odometerUnit)") },
-                            placeholder = lastOdometer?.let {
-                                { Text("Last: ${NumberFormat.getNumberInstance().format(it)}") }
-                            },
+                            placeholder = if (!uiState.isEditMode) {
+                                lastOdometer?.let {
+                                    { Text("Last: ${NumberFormat.getNumberInstance().format(it)}") }
+                                }
+                            } else null,
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Speed,
@@ -427,9 +473,9 @@ fun AddExpenseScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Expense Type Selector (hidden when keyboard is open)
+                // Expense Type Selector (hidden when keyboard is open or in edit mode)
                 AnimatedVisibility(
-                    visible = !isKeyboardOpen,
+                    visible = !isKeyboardOpen && !uiState.isEditMode,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
@@ -471,7 +517,7 @@ fun AddExpenseScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
-                    enabled = !uiState.isLoading,
+                    enabled = !uiState.isLoading && !uiState.isDeleting,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = animatedButtonColor
                     )
@@ -486,7 +532,11 @@ fun AddExpenseScreen(
                         )
                     }
                     Text(
-                        text = if (uiState.isLoading) "Saving..." else "Save Expense",
+                        text = when {
+                            uiState.isLoading -> if (uiState.isEditMode) "Updating..." else "Saving..."
+                            uiState.isEditMode -> "Update"
+                            else -> "Save Expense"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White
                     )
@@ -494,6 +544,7 @@ fun AddExpenseScreen(
             }
         }
     }
+    } // Box
 
     // Date Picker Dialog
     if (showDatePicker) {
@@ -529,6 +580,93 @@ fun AddExpenseScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    // Discard Changes Dialog
+    if (uiState.showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissDiscardDialog() },
+            title = { Text("Discard changes?") },
+            text = { Text("You have unsaved changes. Are you sure you want to discard them?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissDiscardDialog()
+                        onNavigateBack()
+                    }
+                ) {
+                    Text("Discard", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissDiscardDialog() }) {
+                    Text("Keep editing")
+                }
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (uiState.showDeleteDialog) {
+        val expense = uiState.originalExpense
+        val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+        val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+
+        AlertDialog(
+            onDismissRequest = { if (!uiState.isDeleting) viewModel.dismissDeleteDialog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Delete expense?") },
+            text = {
+                Column {
+                    Text(
+                        text = "This will permanently delete:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    expense?.let {
+                        Text(
+                            text = it.description,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${it.date.format(dateFormatter)} - ${currencyFormatter.format(it.cost)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.confirmDelete() },
+                    enabled = !uiState.isDeleting
+                ) {
+                    if (uiState.isDeleting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.dismissDeleteDialog() },
+                    enabled = !uiState.isDeleting
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

@@ -1,8 +1,9 @@
 package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,15 +19,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
@@ -42,15 +40,12 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +60,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
@@ -90,7 +87,8 @@ fun ExpensesScreen(
     odometerUnit: String = "km",
     onNavigateBack: () -> Unit,
     onNavigateToHome: () -> Unit,
-    onAddExpense: (lastOdometer: Int?) -> Unit
+    onAddExpense: (lastOdometer: Int?) -> Unit,
+    onEditExpense: (Expense) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -122,13 +120,6 @@ fun ExpensesScreen(
         uiState.errorMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearError()
-        }
-    }
-
-    LaunchedEffect(uiState.deleteSuccess) {
-        if (uiState.deleteSuccess) {
-            snackbarHostState.showSnackbar("Expense deleted")
-            viewModel.clearDeleteSuccess()
         }
     }
 
@@ -243,10 +234,10 @@ fun ExpensesScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             items(uiState.filteredExpenses, key = { "${it.type}_${it.id}" }) { expense ->
-                                SwipeableExpenseCard(
+                                ExpenseCard(
                                     expense = expense,
                                     odometerUnit = odometerUnit,
-                                    onDelete = { viewModel.requestDelete(expense) }
+                                    onClick = { onEditExpense(expense) }
                                 )
                             }
                         }
@@ -287,147 +278,37 @@ fun ExpensesScreen(
         )
     }
 
-    uiState.expenseToDelete?.let { expense ->
-        DeleteConfirmationDialog(
-            expense = expense,
-            isDeleting = uiState.isDeleting,
-            onConfirm = { viewModel.confirmDelete() },
-            onDismiss = { viewModel.cancelDelete() }
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SwipeableExpenseCard(
-    expense: Expense,
-    odometerUnit: String,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { dismissValue ->
-            if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                onDelete()
-                false // Don't actually dismiss, we'll show a confirmation dialog
-            } else {
-                false
-            }
-        }
-    )
-
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = {
-            val color by animateColorAsState(
-                when (dismissState.targetValue) {
-                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
-                    else -> MaterialTheme.colorScheme.surface
-                },
-                label = "swipe background color"
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(color, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 20.dp),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onErrorContainer
-                )
-            }
-        },
-        enableDismissFromStartToEnd = false,
-        modifier = modifier
-    ) {
-        ExpenseCard(expense = expense, odometerUnit = odometerUnit)
-    }
-}
-
-@Composable
-private fun DeleteConfirmationDialog(
-    expense: Expense,
-    isDeleting: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
-
-    AlertDialog(
-        onDismissRequest = { if (!isDeleting) onDismiss() },
-        icon = {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error
-            )
-        },
-        title = {
-            Text("Delete expense?")
-        },
-        text = {
-            Column {
-                Text(
-                    text = "This will permanently delete:",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = expense.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${expense.date.format(dateFormatter)} • ${currencyFormatter.format(expense.cost)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                enabled = !isDeleting
-            ) {
-                if (isDeleting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(
-                        text = "Delete",
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                enabled = !isDeleting
-            ) {
-                Text("Cancel")
-            }
-        }
-    )
 }
 
 @Composable
 private fun ExpenseCard(
     expense: Expense,
     odometerUnit: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
     val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        label = "cardScale"
+    )
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onClick() }
+                )
+            },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(

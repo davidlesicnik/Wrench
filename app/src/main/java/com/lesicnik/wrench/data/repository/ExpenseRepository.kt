@@ -51,6 +51,10 @@ class ExpenseRepository {
         return fuelStatsCache[vehicleId]
     }
 
+    fun getExpenseById(vehicleId: Int, expenseId: Int, type: ExpenseType): Expense? {
+        return expensesCache[vehicleId]?.find { it.id == expenseId && it.type == type }
+    }
+
     fun invalidateCache(vehicleId: Int) {
         expensesCache.remove(vehicleId)
         fuelStatsCache.remove(vehicleId)
@@ -440,6 +444,49 @@ class ExpenseRepository {
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
         }
+    }
+
+    suspend fun updateExpense(
+        serverUrl: String,
+        apiKey: String,
+        vehicleId: Int,
+        originalExpenseId: Int,
+        originalType: ExpenseType,
+        type: ExpenseType,
+        date: LocalDate,
+        odometer: Int?,
+        description: String,
+        cost: Double,
+        notes: String,
+        fuelConsumed: Double? = null,
+        isFillToFull: Boolean = false,
+        isMissedFuelUp: Boolean = false,
+        isRecurring: Boolean = false
+    ): ApiResult<Unit> {
+        // Delete the original expense first
+        val deleteResult = deleteExpense(serverUrl, apiKey, vehicleId, originalExpenseId, originalType)
+        if (deleteResult is ApiResult.Error) {
+            return deleteResult
+        }
+
+        // Add the new expense
+        val addResult = addExpense(
+            serverUrl = serverUrl,
+            apiKey = apiKey,
+            vehicleId = vehicleId,
+            type = type,
+            date = date,
+            odometer = odometer,
+            description = description,
+            cost = cost,
+            notes = notes,
+            fuelConsumed = fuelConsumed,
+            isFillToFull = isFillToFull,
+            isMissedFuelUp = isMissedFuelUp,
+            isRecurring = isRecurring
+        )
+
+        return addResult
     }
 
     suspend fun getFuelStatistics(
