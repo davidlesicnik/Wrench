@@ -53,6 +53,13 @@ android {
                     }
                 }
             }
+
+            if (storeFile == null) {
+                throw GradleException(
+                    "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
+                        "or provide signing entries in local.properties."
+                )
+            }
         }
     }
 
