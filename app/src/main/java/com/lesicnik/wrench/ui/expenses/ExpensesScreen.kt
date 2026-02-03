@@ -87,6 +87,7 @@ fun ExpensesScreen(
     odometerUnit: String = "km",
     onNavigateBack: () -> Unit,
     onNavigateToHome: () -> Unit,
+    onNavigateToStatistics: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit,
     onEditExpense: (Expense) -> Unit
 ) {
@@ -252,6 +253,7 @@ fun ExpensesScreen(
                 onTabSelected = { tab ->
                     when (tab) {
                         BottomTab.HOME -> onNavigateToHome()
+                        BottomTab.STATISTICS -> onNavigateToStatistics()
                         else -> { /* TODO: Handle other tabs */ }
                     }
                 },
