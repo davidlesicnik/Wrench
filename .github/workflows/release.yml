@@ -27,6 +27,10 @@ jobs:
 
       - name: Verify version bump
         run: |
+          if ! git tag -l | grep -q '^v'; then
+            echo "No previous release tag found; skipping version check."
+            exit 0
+          fi
           currentName=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
           currentCode=$(grep -E 'versionCode\s*=' app/build.gradle.kts | head -n1 | sed -E 's/[^0-9]//g')
 
