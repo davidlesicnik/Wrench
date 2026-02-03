@@ -81,7 +81,7 @@ jobs:
             exit 1
           fi
           printf '%s' "$ENCODED_STRING" | base64 -d > release-keystore.jks
-          echo "RELEASE_KEYSTORE_PATH=release-keystore.jks" >> "$GITHUB_ENV"
+          echo "RELEASE_KEYSTORE_PATH=$GITHUB_WORKSPACE/release-keystore.jks" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:

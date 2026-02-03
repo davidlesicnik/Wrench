@@ -33,7 +33,7 @@ android {
 
             // 2. If env vars are present, use them
             if (keystoreFilePath != null && keystorePass != null) {
-                storeFile = file(keystoreFilePath)
+                storeFile = rootProject.file(keystoreFilePath)
                 storePassword = keystorePass
                 keyAlias = alias
                 keyPassword = aliasPass
@@ -46,7 +46,7 @@ android {
                     localProperties.load(FileInputStream(localFile))
                     val localStoreFile = localProperties.getProperty("storeFile")
                     if (localStoreFile != null) {
-                        storeFile = file(localStoreFile)
+                        storeFile = rootProject.file(localStoreFile)
                         storePassword = localProperties.getProperty("storePassword")
                         keyAlias = localProperties.getProperty("keyAlias")
                         keyPassword = localProperties.getProperty("keyPassword")
