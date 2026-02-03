@@ -23,6 +23,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val isReleaseRequested = gradle.startParameter.taskNames.any {
+        it.contains("release", ignoreCase = true)
+    }
+    var releaseSigningReady = false
+
     signingConfigs {
         create("release") {
             // 1. Try to get secrets from System Environment (GitHub Actions)
@@ -54,6 +59,14 @@ android {
                 }
             }
 
+            releaseSigningReady = storeFile != null
+
+            if (isReleaseRequested && storeFile == null) {
+                throw GradleException(
+                    "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
+                        "or provide signing entries in local.properties."
+                )
+            }
         }
     }
 
@@ -64,7 +77,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -84,13 +99,6 @@ android {
         buildConfig = true
     }
 
-    val isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
-    if (isReleaseTask && signingConfigs.getByName("release").storeFile == null) {
-        throw GradleException(
-            "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
-                "or provide signing entries in local.properties."
-        )
-    }
 }
 
 ksp {
