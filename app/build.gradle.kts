@@ -54,12 +54,6 @@ android {
                 }
             }
 
-            if (storeFile == null) {
-                throw GradleException(
-                    "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
-                        "or provide signing entries in local.properties."
-                )
-            }
         }
     }
 
@@ -88,6 +82,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    val isReleaseTask = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+    if (isReleaseTask && signingConfigs.getByName("release").storeFile == null) {
+        throw GradleException(
+            "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
+                "or provide signing entries in local.properties."
+        )
     }
 }
 
