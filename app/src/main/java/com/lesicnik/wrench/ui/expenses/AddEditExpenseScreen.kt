@@ -176,12 +176,11 @@ fun AddEditExpenseScreen(
     ) {
     Scaffold(
         topBar = {
-            if (!isCompactScreen) {
-                TopAppBar(
-                    title = { Text(if (uiState.isEditMode) "Edit Expense" else "Add Expense") },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            if (uiState.isEditMode && uiState.isDirty) {
+            TopAppBar(
+                title = { Text(if (uiState.isEditMode) "Edit Expense" else "Add Expense") },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        if (uiState.isEditMode && uiState.isDirty) {
                             viewModel.showDiscardDialog()
                         } else {
                             onNavigateBack()
@@ -295,6 +294,12 @@ fun AddEditExpenseScreen(
                     // Fuel-specific fields
                     AnimatedVisibility(visible = uiState.expenseType == ExpenseType.FUEL) {
                         Column {
+                            // Fuel - POS style (type digits, auto-formats with decimal)
+                            val fuelTransformation = remember {
+                                FuelPosTransformation(
+                                    DecimalFormatSymbols.getInstance().decimalSeparator
+                                )
+                            }
                             OutlinedTextField(
                                 value = uiState.fuelConsumed,
                                 onValueChange = viewModel::onFuelConsumedChanged,
@@ -305,8 +310,9 @@ fun AddEditExpenseScreen(
                                         contentDescription = null
                                     )
                                 },
+                                visualTransformation = fuelTransformation,
                                 keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Decimal,
+                                    keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
                                 ),
                                 keyboardActions = KeyboardActions(
@@ -539,7 +545,7 @@ fun AddEditExpenseScreen(
                     onClick = { viewModel.saveExpense() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(if (isCompactScreen) 40.dp else 50.dp),
+                        .height(50.dp),
                     enabled = !uiState.isLoading && !uiState.isDeleting,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = animatedButtonColor
@@ -765,102 +771,48 @@ private fun ExpenseTypeChip(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun CompactExpenseTypeSelector(
-    selectedType: ExpenseType,
-    expenseTypes: List<ExpenseType>,
-    onTypeSelected: (ExpenseType) -> Unit,
-    enabled: Boolean = true
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedStyle = selectedType.getStyle()
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { if (enabled) expanded = it }
-    ) {
-        OutlinedTextField(
-            value = selectedStyle.label,
-            onValueChange = {},
-            readOnly = true,
-            enabled = enabled,
-            leadingIcon = {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(
-                            color = selectedStyle.color,
-                            shape = CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = selectedStyle.icon,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            },
-            trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            },
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth()
-        )
-
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            expenseTypes.forEach { type ->
-                val style = type.getStyle()
-                DropdownMenuItem(
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(
-                                        color = style.color,
-                                        shape = CircleShape
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = style.icon,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                            Text(
-                                text = style.label,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
-                    },
-                    onClick = {
-                        onTypeSelected(type)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
 /**
  * POS-style visual transformation: displays raw digits as formatted currency
  * e.g., "4555" displays as "45,55" (or "45.55" depending on locale)
  */
 private class CurrencyPosTransformation(
+    private val decimalSeparator: Char
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text
+
+        if (digits.isEmpty()) {
+            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
+        }
+
+        // Pad to at least 3 digits for proper formatting
+        val padded = digits.padStart(3, '0')
+        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
+        val decPart = padded.takeLast(2)
+        val formatted = "$intPart$decimalSeparator$decPart"
+
+        return TransformedText(
+            AnnotatedString(formatted),
+            object : OffsetMapping {
+                override fun originalToTransformed(offset: Int): Int {
+                    // Map cursor position from raw digits to formatted string
+                    return formatted.length
+                }
+
+                override fun transformedToOriginal(offset: Int): Int {
+                    // Map cursor position from formatted string to raw digits
+                    return digits.length
+                }
+            }
+        )
+    }
+}
+
+/**
+ * POS-style visual transformation: displays raw digits as formatted fuel liters
+ * e.g., "3198" displays as "31,98" (or "31.98" depending on locale)
+ */
+private class FuelPosTransformation(
     private val decimalSeparator: Char
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {

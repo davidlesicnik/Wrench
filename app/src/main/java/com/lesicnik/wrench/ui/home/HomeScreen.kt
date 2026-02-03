@@ -65,6 +65,7 @@ fun HomeScreen(
     odometerUnit: String = "km",
     onNavigateBack: () -> Unit,
     onNavigateToExpenses: () -> Unit,
+    onNavigateToStatistics: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -163,6 +164,7 @@ fun HomeScreen(
                 onTabSelected = { tab ->
                     when (tab) {
                         BottomTab.EXPENSES -> onNavigateToExpenses()
+                        BottomTab.STATISTICS -> onNavigateToStatistics()
                         else -> { /* TODO: Handle other tabs */ }
                     }
                 },

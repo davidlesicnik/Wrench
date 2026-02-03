@@ -28,8 +28,38 @@ import com.lesicnik.wrench.ui.home.HomeScreen
 import com.lesicnik.wrench.ui.home.HomeViewModel
 import com.lesicnik.wrench.ui.login.LoginScreen
 import com.lesicnik.wrench.ui.login.LoginViewModel
+import com.lesicnik.wrench.ui.statistics.StatisticsScreen
+import com.lesicnik.wrench.ui.statistics.StatisticsViewModel
 import com.lesicnik.wrench.ui.vehicles.VehiclesScreen
 import com.lesicnik.wrench.ui.vehicles.VehiclesViewModel
+
+/**
+ * Data class to hold common vehicle navigation arguments.
+ */
+data class VehicleNavArgs(
+    val vehicleId: Int,
+    val vehicleName: String,
+    val odometerUnit: String
+)
+
+/**
+ * Common nav arguments for screens that display vehicle data.
+ */
+private fun vehicleNavArguments() = listOf(
+    navArgument("vehicleId") { type = NavType.IntType },
+    navArgument("vehicleName") { type = NavType.StringType },
+    navArgument("odometerUnit") { type = NavType.StringType }
+)
+
+/**
+ * Extract vehicle arguments from a BackStackEntry.
+ */
+private fun androidx.navigation.NavBackStackEntry.extractVehicleArgs(): VehicleNavArgs? {
+    val vehicleId = arguments?.getInt("vehicleId") ?: return null
+    val vehicleName = arguments?.getString("vehicleName") ?: ""
+    val odometerUnit = arguments?.getString("odometerUnit") ?: "km"
+    return VehicleNavArgs(vehicleId, vehicleName, odometerUnit)
+}
 
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
@@ -52,6 +82,11 @@ sealed class Screen(val route: String) {
     data object EditExpense : Screen("editExpense/{vehicleId}/{odometerUnit}/{expenseId}/{expenseType}") {
         fun createRoute(vehicleId: Int, odometerUnit: String, expenseId: Int, expenseType: ExpenseType): String {
             return "editExpense/$vehicleId/${Uri.encode(odometerUnit)}/$expenseId/${expenseType.name}"
+        }
+    }
+    data object Statistics : Screen("statistics/{vehicleId}/{vehicleName}/{odometerUnit}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
+            return "statistics/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
         }
     }
 }
@@ -106,11 +141,7 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Home.route,
-            arguments = listOf(
-                navArgument("vehicleId") { type = NavType.IntType },
-                navArgument("vehicleName") { type = NavType.StringType },
-                navArgument("odometerUnit") { type = NavType.StringType }
-            ),
+            arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 // Keep screen visible while add expense screen slides in on top
@@ -119,9 +150,8 @@ fun WrenchNavGraph(
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
-            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
-            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
-            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
 
             val viewModel: HomeViewModel = viewModel(
                 factory = HomeViewModel.Factory(
@@ -139,6 +169,9 @@ fun WrenchNavGraph(
                 onNavigateToExpenses = {
                     navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
+                onNavigateToStatistics = {
+                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
+                },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 }
@@ -147,11 +180,7 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Expenses.route,
-            arguments = listOf(
-                navArgument("vehicleId") { type = NavType.IntType },
-                navArgument("vehicleName") { type = NavType.StringType },
-                navArgument("odometerUnit") { type = NavType.StringType }
-            ),
+            arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 // Keep screen visible while edit screen slides in on top
@@ -160,9 +189,8 @@ fun WrenchNavGraph(
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
-            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
-            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
-            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
 
             val viewModel: ExpensesViewModel = viewModel(
                 factory = ExpensesViewModel.Factory(
@@ -182,6 +210,11 @@ fun WrenchNavGraph(
                     }
                 },
                 onNavigateToHome = { navController.popBackStack() },
+                onNavigateToStatistics = {
+                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Expenses.route) { inclusive = true }
+                    }
+                },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 },
@@ -261,6 +294,56 @@ fun WrenchNavGraph(
                 odometerUnit = odometerUnit,
                 onNavigateBack = { navController.popBackStack() },
                 onExpenseSaved = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.Statistics.route,
+            arguments = vehicleNavArguments(),
+            enterTransition = { EnterTransition.None },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+            },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) { backStackEntry ->
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
+
+            val viewModel: StatisticsViewModel = viewModel(
+                factory = StatisticsViewModel.Factory(
+                    credentialsRepository = credentialsRepository,
+                    expenseRepository = expenseRepository,
+                    vehicleId = vehicleId
+                )
+            )
+
+            // Get last odometer from cached expenses for add expense navigation
+            val lastOdometer = expenseRepository.getCachedExpenses(vehicleId)
+                ?.firstNotNullOfOrNull { it.odometer }
+
+            StatisticsScreen(
+                viewModel = viewModel,
+                vehicleName = vehicleName,
+                odometerUnit = odometerUnit,
+                onNavigateBack = {
+                    navController.navigate(Screen.Vehicles.route) {
+                        popUpTo(Screen.Vehicles.route) { inclusive = true }
+                    }
+                },
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Statistics.route) { inclusive = true }
+                    }
+                },
+                onNavigateToExpenses = {
+                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Statistics.route) { inclusive = true }
+                    }
+                },
+                onAddExpense = {
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
+                }
             )
         }
     }

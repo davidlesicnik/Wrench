@@ -274,9 +274,9 @@ class ExpenseRepository {
         return if (parsed == 0) null else parsed
     }
 
-    // LubeLogger returns costs in cents (minor currency units)
+    // LubeLogger returns costs as decimal values (not cents)
     private fun parseCost(value: String?): Double {
-        return parseNumber(value) / 100.0
+        return parseNumber(value)
     }
 
     private fun ServiceRecord.toExpense() = Expense(
@@ -350,9 +350,8 @@ class ExpenseRepository {
             val api = NetworkModule.getApi(serverUrl)
             val dateString = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
             val odometerString = odometer?.toString() ?: ""
-            // LubeLogger expects cost in cents (minor currency units)
-            val costInCents = (cost * 100).toLong()
-            val costString = costInCents.toString()
+            // Use device locale for decimal separator to match LubeLogger server locale
+            val costString = String.format(java.util.Locale.getDefault(), "%.2f", cost)
 
             val response = when (type) {
                 ExpenseType.SERVICE -> api.addServiceRecord(
@@ -387,7 +386,8 @@ class ExpenseRepository {
                     vehicleId = vehicleId,
                     date = dateString,
                     odometer = odometerString,
-                    fuelConsumed = fuelConsumed?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "",
+                    // Use device locale for decimal separator to match LubeLogger server locale
+                    fuelConsumed = fuelConsumed?.let { String.format(java.util.Locale.getDefault(), "%.2f", it) } ?: "",
                     isFillToFull = isFillToFull.toString(),
                     missedFuelUp = isMissedFuelUp.toString(),
                     cost = costString,

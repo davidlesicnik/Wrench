@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -15,18 +18,52 @@ android {
         minSdk = 29
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            // 1. Try to get secrets from System Environment (GitHub Actions)
+            val keystoreFilePath = System.getenv("RELEASE_KEYSTORE_PATH")
+            val keystorePass = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            val alias = System.getenv("RELEASE_KEY_ALIAS")
+            val aliasPass = System.getenv("RELEASE_KEY_PASSWORD")
+
+            // 2. If env vars are present, use them
+            if (keystoreFilePath != null && keystorePass != null) {
+                storeFile = file(keystoreFilePath)
+                storePassword = keystorePass
+                keyAlias = alias
+                keyPassword = aliasPass
+            }
+            // 3. Optional: Fallback for local builds using local.properties
+            else {
+                val localProperties = Properties()
+                val localFile = rootProject.file("local.properties")
+                if (localFile.exists()) {
+                    localProperties.load(FileInputStream(localFile))
+                    val localStoreFile = localProperties.getProperty("storeFile")
+                    if (localStoreFile != null) {
+                        storeFile = file(localStoreFile)
+                        storePassword = localProperties.getProperty("storePassword")
+                        keyAlias = localProperties.getProperty("keyAlias")
+                        keyPassword = localProperties.getProperty("keyPassword")
+                    }
+                }
+            }
+        }
+    }
+
     buildTypes {
-        release {
-            isMinifyEnabled = false
+        getByName("release") {
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -82,6 +119,9 @@ dependencies {
 
     // Security
     implementation(libs.androidx.security.crypto)
+
+    // Charts
+    implementation(libs.vico.compose.m3)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
