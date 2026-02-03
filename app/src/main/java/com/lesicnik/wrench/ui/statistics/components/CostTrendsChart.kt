@@ -30,9 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
@@ -41,7 +38,6 @@ import com.lesicnik.wrench.ui.statistics.CostTrendPoint
 import com.lesicnik.wrench.ui.theme.FuelGreen
 import com.lesicnik.wrench.ui.theme.ServiceBlue
 import java.text.NumberFormat
-import kotlin.math.abs
 
 @Composable
 fun CostTrendsChart(
@@ -112,23 +108,18 @@ fun CostTrendsChart(
                                 detectTapGestures { tapOffset ->
                                     val chartWidth = size.width.toFloat()
                                     val chartHeight = size.height.toFloat()
-                                    val pointCount = trends.size
-                                    if (pointCount < 2) return@detectTapGestures
-                                    val xStep = chartWidth / (pointCount - 1)
+                                    if (trends.size < 2) return@detectTapGestures
+                                    val xStep = chartWidth / (trends.size - 1)
+                                    val tapThreshold = with(density) { 40.dp.toPx() }
 
-                                    // Find closest point
-                                    var closestIndex = 0
-                                    var closestDistance = Float.MAX_VALUE
-                                    trends.forEachIndexed { index, _ ->
-                                        val pointX = index * xStep
-                                        val distance = abs(tapOffset.x - pointX)
-                                        if (distance < closestDistance) {
-                                            closestDistance = distance
-                                            closestIndex = index
-                                        }
-                                    }
+                                    val (closestIndex, isWithinThreshold) = findClosestPointIndex(
+                                        tapX = tapOffset.x,
+                                        pointCount = trends.size,
+                                        chartWidth = chartWidth,
+                                        tapThresholdPx = tapThreshold
+                                    )
 
-                                    if (closestDistance < with(density) { 40.dp.toPx() }) {
+                                    if (isWithinThreshold) {
                                         selectedPoint = closestIndex
                                         val fuelY = (1 - fuelValues[closestIndex] / maxValue) * chartHeight
                                         tooltipPosition = Offset(closestIndex * xStep, fuelY)
@@ -140,41 +131,14 @@ fun CostTrendsChart(
                     ) {
                         val chartWidth = size.width
                         val chartHeight = size.height
-                        val pointCount = trends.size
 
-                        if (pointCount < 2) return@Canvas
+                        if (trends.size < 2) return@Canvas
 
-                        val xStep = chartWidth / (pointCount - 1)
+                        val xStep = chartWidth / (trends.size - 1)
 
-                        // Draw horizontal grid lines
-                        val gridLines = 4
-                        for (i in 0..gridLines) {
-                            val y = (chartHeight / gridLines) * i
-                            drawLine(
-                                color = gridColor,
-                                start = Offset(0f, y),
-                                end = Offset(chartWidth, y),
-                                strokeWidth = 1.dp.toPx()
-                            )
-                        }
-
-                        // Draw fuel line
-                        drawLine(
-                            values = fuelValues,
-                            maxValue = maxValue,
-                            chartHeight = chartHeight,
-                            xStep = xStep,
-                            color = FuelGreen
-                        )
-
-                        // Draw other costs line
-                        drawLine(
-                            values = otherValues,
-                            maxValue = maxValue,
-                            chartHeight = chartHeight,
-                            xStep = xStep,
-                            color = ServiceBlue
-                        )
+                        drawGridLines(gridColor, chartWidth, chartHeight)
+                        drawLinePath(fuelValues, maxValue, 0f, chartHeight, xStep, FuelGreen)
+                        drawLinePath(otherValues, maxValue, 0f, chartHeight, xStep, ServiceBlue)
                     }
 
                     // X-axis labels
@@ -293,28 +257,4 @@ fun CostTrendsChart(
             }
         }
     }
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLine(
-    values: List<Float>,
-    maxValue: Float,
-    chartHeight: Float,
-    xStep: Float,
-    color: Color
-) {
-    if (values.size < 2) return
-
-    val path = Path()
-    val normalizedPoints = values.map { (1 - it / maxValue) * chartHeight }
-
-    path.moveTo(0f, normalizedPoints[0])
-    for (i in 1 until normalizedPoints.size) {
-        path.lineTo(i * xStep, normalizedPoints[i])
-    }
-
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = 3.dp.toPx())
-    )
 }

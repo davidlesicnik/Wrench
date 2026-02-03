@@ -1,18 +1,14 @@
 package com.lesicnik.wrench.ui.statistics.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -26,15 +22,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.ui.statistics.OdometerPoint
 import java.text.NumberFormat
-import kotlin.math.abs
 
 @Composable
 fun OdometerChart(
@@ -97,28 +89,20 @@ fun OdometerChart(
                             detectTapGestures { tapOffset ->
                                 val chartWidth = size.width.toFloat()
                                 val chartHeight = size.height.toFloat()
-                                val pointCount = values.size
-                                val xStep = chartWidth / (pointCount - 1)
+                                val xStep = chartWidth / (values.size - 1)
+                                val tapThreshold = with(density) { 40.dp.toPx() }
 
-                                // Find closest point
-                                var closestIndex = 0
-                                var closestDistance = Float.MAX_VALUE
-                                values.forEachIndexed { index, _ ->
-                                    val pointX = index * xStep
-                                    val distance = abs(tapOffset.x - pointX)
-                                    if (distance < closestDistance) {
-                                        closestDistance = distance
-                                        closestIndex = index
-                                    }
-                                }
+                                val (closestIndex, isWithinThreshold) = findClosestPointIndex(
+                                    tapX = tapOffset.x,
+                                    pointCount = values.size,
+                                    chartWidth = chartWidth,
+                                    tapThresholdPx = tapThreshold
+                                )
 
-                                // Only select if tap is close enough (within 40dp)
-                                if (closestDistance < with(density) { 40.dp.toPx() }) {
+                                if (isWithinThreshold) {
                                     selectedPoint = closestIndex
-                                    val normalizedY =
-                                        ((maxValue - values[closestIndex]) / range) * chartHeight
-                                    tooltipPosition =
-                                        Offset(closestIndex * xStep, normalizedY)
+                                    val normalizedY = ((maxValue - values[closestIndex]) / range) * chartHeight
+                                    tooltipPosition = Offset(closestIndex * xStep, normalizedY)
                                 } else {
                                     selectedPoint = null
                                 }
@@ -127,35 +111,10 @@ fun OdometerChart(
                 ) {
                     val chartWidth = size.width
                     val chartHeight = size.height
-                    val pointCount = values.size
-                    val xStep = chartWidth / (pointCount - 1)
+                    val xStep = chartWidth / (values.size - 1)
 
-                    // Draw horizontal grid lines
-                    val gridLines = 4
-                    for (i in 0..gridLines) {
-                        val y = (chartHeight / gridLines) * i
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(0f, y),
-                            end = Offset(chartWidth, y),
-                            strokeWidth = 1.dp.toPx()
-                        )
-                    }
-
-                    // Draw line chart
-                    val path = Path()
-                    val normalizedPoints = values.map { ((maxValue - it) / range) * chartHeight }
-
-                    path.moveTo(0f, normalizedPoints[0])
-                    for (i in 1 until normalizedPoints.size) {
-                        path.lineTo(i * xStep, normalizedPoints[i])
-                    }
-
-                    drawPath(
-                        path = path,
-                        color = chartColor,
-                        style = Stroke(width = 3.dp.toPx())
-                    )
+                    drawGridLines(gridColor, chartWidth, chartHeight)
+                    drawLinePath(values, maxValue, minValue, chartHeight, xStep, chartColor)
                 }
 
                 // Y-axis labels
@@ -186,37 +145,20 @@ fun OdometerChart(
                 // Tooltip
                 selectedPoint?.takeIf { it < odometerTrends.size }?.let { index ->
                     val point = odometerTrends[index]
-                    val xOffset = with(density) {
-                        (48.dp.toPx() + tooltipPosition.x - 60.dp.toPx()).coerceIn(
-                            0f,
-                            boxWidth - 120.dp.toPx()
-                        )
-                    }
-                    val yOffset = with(density) {
-                        (16.dp.toPx() + tooltipPosition.y - 48.dp.toPx()).coerceAtLeast(0f)
-                    }
+                    val offset = calculateTooltipOffset(
+                        density = density,
+                        tooltipPosition = tooltipPosition,
+                        chartStartPadding = 48.dp,
+                        tooltipWidth = 120.dp,
+                        tooltipHeight = 48.dp,
+                        containerWidth = boxWidth
+                    )
 
-                    Box(
-                        modifier = Modifier
-                            .offset { IntOffset(xOffset.toInt(), yOffset.toInt()) }
-                            .background(
-                                MaterialTheme.colorScheme.inverseSurface,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = point.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.inverseOnSurface
-                            )
-                            Text(
-                                text = "${numberFormatter.format(point.odometer)} $odometerUnit",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.inverseOnSurface
-                            )
-                        }
+                    ChartTooltip(offset = offset) {
+                        TooltipContent(
+                            label = point.label,
+                            value = "${numberFormatter.format(point.odometer)} $odometerUnit"
+                        )
                     }
                 }
             }

@@ -33,6 +33,34 @@ import com.lesicnik.wrench.ui.statistics.StatisticsViewModel
 import com.lesicnik.wrench.ui.vehicles.VehiclesScreen
 import com.lesicnik.wrench.ui.vehicles.VehiclesViewModel
 
+/**
+ * Data class to hold common vehicle navigation arguments.
+ */
+data class VehicleNavArgs(
+    val vehicleId: Int,
+    val vehicleName: String,
+    val odometerUnit: String
+)
+
+/**
+ * Common nav arguments for screens that display vehicle data.
+ */
+private fun vehicleNavArguments() = listOf(
+    navArgument("vehicleId") { type = NavType.IntType },
+    navArgument("vehicleName") { type = NavType.StringType },
+    navArgument("odometerUnit") { type = NavType.StringType }
+)
+
+/**
+ * Extract vehicle arguments from a BackStackEntry.
+ */
+private fun androidx.navigation.NavBackStackEntry.extractVehicleArgs(): VehicleNavArgs? {
+    val vehicleId = arguments?.getInt("vehicleId") ?: return null
+    val vehicleName = arguments?.getString("vehicleName") ?: ""
+    val odometerUnit = arguments?.getString("odometerUnit") ?: "km"
+    return VehicleNavArgs(vehicleId, vehicleName, odometerUnit)
+}
+
 sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Vehicles : Screen("vehicles")
@@ -113,11 +141,7 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Home.route,
-            arguments = listOf(
-                navArgument("vehicleId") { type = NavType.IntType },
-                navArgument("vehicleName") { type = NavType.StringType },
-                navArgument("odometerUnit") { type = NavType.StringType }
-            ),
+            arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 // Keep screen visible while add expense screen slides in on top
@@ -126,9 +150,8 @@ fun WrenchNavGraph(
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
-            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
-            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
-            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
 
             val viewModel: HomeViewModel = viewModel(
                 factory = HomeViewModel.Factory(
@@ -157,11 +180,7 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Expenses.route,
-            arguments = listOf(
-                navArgument("vehicleId") { type = NavType.IntType },
-                navArgument("vehicleName") { type = NavType.StringType },
-                navArgument("odometerUnit") { type = NavType.StringType }
-            ),
+            arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 // Keep screen visible while edit screen slides in on top
@@ -170,9 +189,8 @@ fun WrenchNavGraph(
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
-            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
-            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
-            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
 
             val viewModel: ExpensesViewModel = viewModel(
                 factory = ExpensesViewModel.Factory(
@@ -281,11 +299,7 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Statistics.route,
-            arguments = listOf(
-                navArgument("vehicleId") { type = NavType.IntType },
-                navArgument("vehicleName") { type = NavType.StringType },
-                navArgument("odometerUnit") { type = NavType.StringType }
-            ),
+            arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
@@ -293,9 +307,8 @@ fun WrenchNavGraph(
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
         ) { backStackEntry ->
-            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
-            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
-            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+            val args = backStackEntry.extractVehicleArgs() ?: return@composable
+            val (vehicleId, vehicleName, odometerUnit) = args
 
             val viewModel: StatisticsViewModel = viewModel(
                 factory = StatisticsViewModel.Factory(
