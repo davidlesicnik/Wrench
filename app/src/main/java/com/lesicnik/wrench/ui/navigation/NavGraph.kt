@@ -28,6 +28,8 @@ import com.lesicnik.wrench.ui.home.HomeScreen
 import com.lesicnik.wrench.ui.home.HomeViewModel
 import com.lesicnik.wrench.ui.login.LoginScreen
 import com.lesicnik.wrench.ui.login.LoginViewModel
+import com.lesicnik.wrench.ui.statistics.StatisticsScreen
+import com.lesicnik.wrench.ui.statistics.StatisticsViewModel
 import com.lesicnik.wrench.ui.vehicles.VehiclesScreen
 import com.lesicnik.wrench.ui.vehicles.VehiclesViewModel
 
@@ -52,6 +54,11 @@ sealed class Screen(val route: String) {
     data object EditExpense : Screen("editExpense/{vehicleId}/{odometerUnit}/{expenseId}/{expenseType}") {
         fun createRoute(vehicleId: Int, odometerUnit: String, expenseId: Int, expenseType: ExpenseType): String {
             return "editExpense/$vehicleId/${Uri.encode(odometerUnit)}/$expenseId/${expenseType.name}"
+        }
+    }
+    data object Statistics : Screen("statistics/{vehicleId}/{vehicleName}/{odometerUnit}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
+            return "statistics/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
         }
     }
 }
@@ -139,6 +146,9 @@ fun WrenchNavGraph(
                 onNavigateToExpenses = {
                     navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
+                onNavigateToStatistics = {
+                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
+                },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 }
@@ -182,6 +192,11 @@ fun WrenchNavGraph(
                     }
                 },
                 onNavigateToHome = { navController.popBackStack() },
+                onNavigateToStatistics = {
+                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Expenses.route) { inclusive = true }
+                    }
+                },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 },
@@ -261,6 +276,61 @@ fun WrenchNavGraph(
                 odometerUnit = odometerUnit,
                 onNavigateBack = { navController.popBackStack() },
                 onExpenseSaved = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.Statistics.route,
+            arguments = listOf(
+                navArgument("vehicleId") { type = NavType.IntType },
+                navArgument("vehicleName") { type = NavType.StringType },
+                navArgument("odometerUnit") { type = NavType.StringType }
+            ),
+            enterTransition = { EnterTransition.None },
+            exitTransition = {
+                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+            },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) { backStackEntry ->
+            val vehicleId = backStackEntry.arguments?.getInt("vehicleId") ?: return@composable
+            val vehicleName = backStackEntry.arguments?.getString("vehicleName") ?: ""
+            val odometerUnit = backStackEntry.arguments?.getString("odometerUnit") ?: "km"
+
+            val viewModel: StatisticsViewModel = viewModel(
+                factory = StatisticsViewModel.Factory(
+                    credentialsRepository = credentialsRepository,
+                    expenseRepository = expenseRepository,
+                    vehicleId = vehicleId
+                )
+            )
+
+            // Get last odometer from cached expenses for add expense navigation
+            val lastOdometer = expenseRepository.getCachedExpenses(vehicleId)
+                ?.firstNotNullOfOrNull { it.odometer }
+
+            StatisticsScreen(
+                viewModel = viewModel,
+                vehicleName = vehicleName,
+                odometerUnit = odometerUnit,
+                onNavigateBack = {
+                    navController.navigate(Screen.Vehicles.route) {
+                        popUpTo(Screen.Vehicles.route) { inclusive = true }
+                    }
+                },
+                onNavigateToHome = {
+                    navController.navigate(Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Statistics.route) { inclusive = true }
+                    }
+                },
+                onNavigateToExpenses = {
+                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Statistics.route) { inclusive = true }
+                    }
+                },
+                onAddExpense = {
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
+                }
             )
         }
     }
