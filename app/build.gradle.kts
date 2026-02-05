@@ -113,6 +113,7 @@ android {
         compose = true
         buildConfig = true
     }
+}
 
 androidComponents {
     beforeVariants(selector().withBuildType("release")) { variantBuilder ->
@@ -137,10 +138,6 @@ tasks
             }
         }
     }
-
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
 
 dependencies {
     implementation(libs.androidx.core.ktx)
