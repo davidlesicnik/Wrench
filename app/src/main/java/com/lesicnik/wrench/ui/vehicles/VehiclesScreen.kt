@@ -58,6 +58,7 @@ import coil.request.ImageRequest
 import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.ui.components.EmptyContent
 import com.lesicnik.wrench.ui.components.ErrorContent
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,12 +76,11 @@ fun VehiclesScreen(
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     Scaffold(
         topBar = {
@@ -335,4 +335,3 @@ private fun VehicleCard(
         }
     }
 }
-

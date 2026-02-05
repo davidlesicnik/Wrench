@@ -14,15 +14,8 @@ object NetworkModule {
     private var lubeLoggerApi: LubeLoggerApi? = null
 
     private val okHttpClient: OkHttpClient by lazy {
-        val loggingInterceptor = HttpLoggingInterceptor { message ->
-            // Redact sensitive headers from logs
-            val redactedMessage = if (message.contains("x-api-key", ignoreCase = true)) {
-                message.replace(Regex("x-api-key:\\s*\\S+", RegexOption.IGNORE_CASE), "x-api-key: [REDACTED]")
-            } else {
-                message
-            }
-            android.util.Log.d("OkHttp", redactedMessage)
-        }.apply {
+        val loggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("x-api-key")
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.HEADERS
             } else {
@@ -31,6 +24,7 @@ object NetworkModule {
         }
 
         OkHttpClient.Builder()
+            .addInterceptor(LocalHttpOnlyInterceptor())
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

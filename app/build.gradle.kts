@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 val isCiBuild = System.getenv("GITHUB_ACTIONS")?.equals("true", ignoreCase = true) == true
@@ -115,7 +113,6 @@ android {
         compose = true
         buildConfig = true
     }
-}
 
 androidComponents {
     beforeVariants(selector().withBuildType("release")) { variantBuilder ->
@@ -156,11 +153,6 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
     // Retrofit + OkHttp
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
@@ -172,9 +164,6 @@ dependencies {
 
     // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Serialization
-    implementation(libs.kotlinx.serialization.json)
 
     // Image loading
     implementation(libs.coil.compose)
