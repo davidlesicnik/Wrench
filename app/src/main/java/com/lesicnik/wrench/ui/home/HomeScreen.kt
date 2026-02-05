@@ -34,8 +34,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -45,15 +43,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.lesicnik.wrench.ui.components.BottomBarWithFab
 import com.lesicnik.wrench.ui.components.BottomBarHeight
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.ErrorContent
 import com.lesicnik.wrench.ui.theme.FuelGreen
 import com.lesicnik.wrench.ui.theme.ServiceBlue
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
+import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -70,27 +67,15 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     // Refresh statistics when screen resumes
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadStatistics()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    RefreshOnResumeEffect(onResume = { viewModel.loadStatistics() })
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     Scaffold(
         topBar = {
@@ -386,4 +371,3 @@ private fun CostsCard(
         }
     }
 }
-

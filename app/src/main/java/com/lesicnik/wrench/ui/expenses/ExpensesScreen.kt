@@ -51,17 +51,12 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -75,6 +70,8 @@ import com.lesicnik.wrench.ui.components.BottomBarHeight
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.EmptyContent
 import com.lesicnik.wrench.ui.components.ErrorContent
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
+import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
 import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
 import com.lesicnik.wrench.ui.utils.icon
@@ -98,7 +95,6 @@ fun ExpensesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val lifecycleOwner = LocalLifecycleOwner.current
     var showFilterSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -110,24 +106,13 @@ fun ExpensesScreen(
     }
 
     // Refresh expenses when screen resumes (e.g., after adding an expense)
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadExpenses()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    RefreshOnResumeEffect(onResume = { viewModel.loadExpenses() })
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     Scaffold(
         topBar = {
