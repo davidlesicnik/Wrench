@@ -22,7 +22,10 @@ jobs:
       matrix:
         language: ["java-kotlin"]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          # For PRs, prefer the head SHA to avoid auto-merge refs producing confusing build inputs.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -45,6 +48,11 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: manual
+      - name: Debug Gradle script
+        run: |
+          set -euxo pipefail
+          git rev-parse HEAD
+          nl -ba app/build.gradle.kts | tail -n 80
       - name: Build (manual)
         run: ./gradlew --no-daemon --stacktrace :app:compileDebugKotlin :app:compileDebugJavaWithJavac
       - name: Perform CodeQL Analysis
