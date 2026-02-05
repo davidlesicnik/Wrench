@@ -9,6 +9,17 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val isCiBuild = System.getenv("GITHUB_ACTIONS")?.equals("true", ignoreCase = true) == true
+val requireReleaseSigningProperty = providers.gradleProperty("requireReleaseSigning").orNull
+val requireReleaseSigning =
+    when (requireReleaseSigningProperty?.trim()?.lowercase()) {
+        "true" -> true
+        "false" -> false
+        else -> isCiBuild
+    }
+
+var releaseSigningConfigured = false
+
 android {
     namespace = "com.lesicnik.wrench"
     compileSdk = 36
@@ -17,35 +28,34 @@ android {
         applicationId = "com.lesicnik.wrench"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1"
+        versionCode = 2
+        versionName = "2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    signingConfigs {
-        create("release") {
-            // 1. Try to get secrets from System Environment (GitHub Actions)
+    val releaseSigning =
+        signingConfigs.create("release") {
+            // 1. Try to get secrets from System Environment (e.g., CI)
             val keystoreFilePath = System.getenv("RELEASE_KEYSTORE_PATH")
             val keystorePass = System.getenv("RELEASE_KEYSTORE_PASSWORD")
             val alias = System.getenv("RELEASE_KEY_ALIAS")
             val aliasPass = System.getenv("RELEASE_KEY_PASSWORD")
 
             // 2. If env vars are present, use them
-            if (keystoreFilePath != null && keystorePass != null) {
+            if (!keystoreFilePath.isNullOrBlank() && !keystorePass.isNullOrBlank()) {
                 storeFile = rootProject.file(keystoreFilePath)
                 storePassword = keystorePass
                 keyAlias = alias
                 keyPassword = aliasPass
-            }
-            // 3. Optional: Fallback for local builds using local.properties
-            else {
-                val localProperties = Properties()
+            } else {
+                // 3. Optional: Fallback for local builds using local.properties
                 val localFile = rootProject.file("local.properties")
                 if (localFile.exists()) {
-                    localProperties.load(FileInputStream(localFile))
+                    val localProperties = Properties()
+                    FileInputStream(localFile).use(localProperties::load)
                     val localStoreFile = localProperties.getProperty("storeFile")
-                    if (localStoreFile != null) {
+                    if (!localStoreFile.isNullOrBlank()) {
                         storeFile = rootProject.file(localStoreFile)
                         storePassword = localProperties.getProperty("storePassword")
                         keyAlias = localProperties.getProperty("keyAlias")
@@ -53,15 +63,22 @@ android {
                     }
                 }
             }
-
-            if (storeFile == null) {
-                throw GradleException(
-                    "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
-                        "or provide signing entries in local.properties."
-                )
-            }
         }
-    }
+
+    releaseSigningConfigured =
+        releaseSigning.storeFile != null &&
+            releaseSigning.storeFile!!.exists() &&
+            !releaseSigning.storePassword.isNullOrBlank() &&
+            !releaseSigning.keyAlias.isNullOrBlank() &&
+            !releaseSigning.keyPassword.isNullOrBlank()
+
+    val isReleaseArtifactRequested =
+        gradle.startParameter.taskNames
+            .map { it.substringAfterLast(":") }
+            .any { taskName ->
+                taskName.equals("assembleRelease", ignoreCase = true) ||
+                    taskName.equals("bundleRelease", ignoreCase = true)
+            }
 
     buildTypes {
         getByName("release") {
@@ -70,7 +87,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningConfigured) {
+                signingConfig = releaseSigning
+            } else {
+                if (isReleaseArtifactRequested) {
+                    project.logger.warn(
+                        "Release signing is not configured; release artifacts will be unsigned. " +
+                            "Set RELEASE_KEYSTORE_* env vars or add storeFile/storePassword/keyAlias/keyPassword to local.properties."
+                    )
+                }
+            }
         }
     }
     compileOptions {
@@ -90,6 +116,30 @@ android {
         buildConfig = true
     }
 }
+
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variantBuilder ->
+        if (!isCiBuild) {
+            variantBuilder.enable = false
+        }
+    }
+}
+
+tasks
+    .matching {
+        it.name.equals("assembleRelease", ignoreCase = true) ||
+            it.name.equals("bundleRelease", ignoreCase = true)
+    }
+    .configureEach {
+        doFirst {
+            if (requireReleaseSigning && !releaseSigningConfigured) {
+                throw GradleException(
+                    "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
+                        "or provide signing entries in local.properties."
+                )
+            }
+        }
+    }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
