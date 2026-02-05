@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -22,6 +20,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    val isReleaseRequested = gradle.startParameter.taskNames.any {
+        it.contains("release", ignoreCase = true)
+    }
+    var releaseSigningReady = false
 
     signingConfigs {
         create("release") {
@@ -54,7 +57,9 @@ android {
                 }
             }
 
-            if (storeFile == null) {
+            releaseSigningReady = storeFile != null
+
+            if (isReleaseRequested && storeFile == null) {
                 throw GradleException(
                     "Release signing config is missing. Set RELEASE_KEYSTORE_* env vars " +
                         "or provide signing entries in local.properties."
@@ -70,7 +75,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -89,10 +96,7 @@ android {
         compose = true
         buildConfig = true
     }
-}
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -106,11 +110,6 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
     // Retrofit + OkHttp
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
@@ -122,9 +121,6 @@ dependencies {
 
     // ViewModel
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Serialization
-    implementation(libs.kotlinx.serialization.json)
 
     // Image loading
     implementation(libs.coil.compose)

@@ -3,11 +3,6 @@ package com.lesicnik.wrench.data.repository
 import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.remote.Vehicle
 
-sealed class ApiResult<out T> {
-    data class Success<T>(val data: T) : ApiResult<T>()
-    data class Error(val message: String) : ApiResult<Nothing>()
-}
-
 class VehicleRepository {
 
     suspend fun getVehicles(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {

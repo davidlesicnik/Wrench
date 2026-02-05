@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,24 +42,21 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -71,15 +70,18 @@ import com.lesicnik.wrench.ui.components.BottomBarHeight
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.EmptyContent
 import com.lesicnik.wrench.ui.components.ErrorContent
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
+import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
 import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
 import com.lesicnik.wrench.ui.utils.icon
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ExpensesScreen(
     viewModel: ExpensesViewModel,
@@ -93,7 +95,6 @@ fun ExpensesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val lifecycleOwner = LocalLifecycleOwner.current
     var showFilterSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
@@ -105,24 +106,13 @@ fun ExpensesScreen(
     }
 
     // Refresh expenses when screen resumes (e.g., after adding an expense)
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.loadExpenses()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    RefreshOnResumeEffect(onResume = { viewModel.loadExpenses() })
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     Scaffold(
         topBar = {
@@ -224,22 +214,49 @@ fun ExpensesScreen(
                     }
 
                     else -> {
+                        val sortedExpenses = remember(uiState.filteredExpenses) {
+                            uiState.filteredExpenses.sortedWith(
+                                compareByDescending<Expense> { it.date }
+                                    .thenByDescending { it.odometer ?: Int.MIN_VALUE }
+                                    .thenByDescending { it.id }
+                            )
+                        }
+                        val expensesByMonth = remember(sortedExpenses) {
+                            sortedExpenses.groupBy { YearMonth.from(it.date) }
+                        }
+                        val monthOrder = remember(expensesByMonth) {
+                            expensesByMonth.keys.sortedDescending()
+                        }
+                        val listState = rememberLazyListState()
+
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            state = listState,
                             contentPadding = PaddingValues(
-                                start = 16.dp,
-                                end = 16.dp,
-                                top = 16.dp,
                                 bottom = BottomBarHeight + 16.dp
                             ),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(uiState.filteredExpenses, key = { "${it.type}_${it.id}" }) { expense ->
-                                ExpenseCard(
-                                    expense = expense,
-                                    odometerUnit = odometerUnit,
-                                    onClick = { onEditExpense(expense) }
-                                )
+                            monthOrder.forEach { month ->
+                                val headerKey = "month_${month}"
+                                stickyHeader(key = headerKey) {
+                                    val isSticky =
+                                        listState.layoutInfo.visibleItemsInfo
+                                            .firstOrNull { it.key == headerKey }
+                                            ?.offset == 0 &&
+                                        // At the absolute top of the list we don't need the "sticky" shadow.
+                                        (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset > 0)
+
+                                    MonthDivider(month = month, isSticky = isSticky)
+                                }
+                                items(expensesByMonth[month].orEmpty(), key = { "${it.type}_${it.id}" }) { expense ->
+                                    ExpenseCard(
+                                        expense = expense,
+                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        odometerUnit = odometerUnit,
+                                        onClick = { onEditExpense(expense) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -415,6 +432,36 @@ private fun ExpenseIcon(type: ExpenseType) {
     }
 }
 
+@Composable
+private fun MonthDivider(
+    month: YearMonth,
+    isSticky: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy") }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        // Match Scaffold's base color so the sticky header doesn't "flash" a different tone.
+        color = MaterialTheme.colorScheme.background,
+        shadowElevation = if (isSticky) 6.dp else 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = month.format(monthFormatter),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+}
+
 
 @Composable
 private fun EmptyFilterContent(
@@ -560,4 +607,3 @@ private fun FilterBottomSheet(
         }
     }
 }
-

@@ -28,12 +28,24 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "17"
+          cache: gradle
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER="${ANDROID_SDK_ROOT:-}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "platforms;android-36"
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: manual
       - name: Build (manual)
-        run: ./gradlew --no-daemon :app:compileDebugKotlin :app:compileDebugJavaWithJavac
+        run: ./gradlew --no-daemon --stacktrace :app:compileDebugKotlin :app:compileDebugJavaWithJavac
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

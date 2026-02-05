@@ -31,12 +31,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.LocalGasStation
-import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -86,6 +86,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import java.text.DecimalFormatSymbols
 import com.lesicnik.wrench.data.remote.records.ExpenseType
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
 import com.lesicnik.wrench.ui.utils.rememberKeyboardVisibility
@@ -111,6 +112,12 @@ fun AddEditExpenseScreen(
     val hapticFeedback = LocalHapticFeedback.current
     var showDatePicker by remember { mutableStateOf(false) }
     val isKeyboardOpen by rememberKeyboardVisibility()
+    val nextFieldKeyboardActions = KeyboardActions(
+        onNext = { focusManager.moveFocus(FocusDirection.Down) }
+    )
+    val standardFieldModifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 16.dp)
 
     // Detect compact screen (e.g., Galaxy Flip cover screen ~524dp)
     val configuration = LocalConfiguration.current
@@ -159,12 +166,11 @@ fun AddEditExpenseScreen(
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     Box(
         modifier = Modifier
@@ -277,13 +283,9 @@ fun AddEditExpenseScreen(
                                 keyboardType = KeyboardType.Number,
                                 imeAction = ImeAction.Next
                             ),
-                            keyboardActions = KeyboardActions(
-                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                            ),
+                            keyboardActions = nextFieldKeyboardActions,
                             singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
+                            modifier = standardFieldModifier,
                             enabled = !uiState.isLoading
                         )
                     }
@@ -312,13 +314,9 @@ fun AddEditExpenseScreen(
                                     keyboardType = KeyboardType.Number,
                                     imeAction = ImeAction.Next
                                 ),
-                                keyboardActions = KeyboardActions(
-                                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                                ),
+                                keyboardActions = nextFieldKeyboardActions,
                                 singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 16.dp),
+                                modifier = standardFieldModifier,
                                 enabled = !uiState.isLoading
                             )
 
@@ -385,13 +383,9 @@ fun AddEditExpenseScreen(
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Next
                             ),
-                            keyboardActions = KeyboardActions(
-                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                            ),
+                            keyboardActions = nextFieldKeyboardActions,
                             singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
+                            modifier = standardFieldModifier,
                             enabled = !uiState.isLoading
                         )
                     }
@@ -417,13 +411,9 @@ fun AddEditExpenseScreen(
                             keyboardType = KeyboardType.Number,
                             imeAction = ImeAction.Next
                         ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        ),
+                        keyboardActions = nextFieldKeyboardActions,
                         singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp),
+                        modifier = standardFieldModifier,
                         enabled = !uiState.isLoading
                     )
 
@@ -454,7 +444,7 @@ fun AddEditExpenseScreen(
                         label = { Text("Notes (optional)") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.Notes,
+                                imageVector = Icons.AutoMirrored.Filled.Notes,
                                 contentDescription = null
                             )
                         },
@@ -469,9 +459,7 @@ fun AddEditExpenseScreen(
                         ),
                         minLines = 2,
                         maxLines = 4,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp),
+                        modifier = standardFieldModifier,
                         enabled = !uiState.isLoading
                     )
                 }

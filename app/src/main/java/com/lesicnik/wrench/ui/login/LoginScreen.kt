@@ -58,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 
 @Composable
 fun LoginScreen(
@@ -76,12 +77,11 @@ fun LoginScreen(
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearError()
-        }
-    }
+    ErrorSnackbarEffect(
+        errorMessage = uiState.errorMessage,
+        snackbarHostState = snackbarHostState,
+        onErrorConsumed = viewModel::clearError
+    )
 
     // HTTP Warning Dialog
     if (uiState.showHttpWarning) {

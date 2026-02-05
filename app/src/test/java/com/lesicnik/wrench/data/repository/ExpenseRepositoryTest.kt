@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.data.repository
 
+import com.lesicnik.wrench.data.repository.expense.ExpenseMapper
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -7,74 +8,74 @@ import java.time.LocalDate
 
 class ExpenseRepositoryTest {
 
-    private lateinit var repository: ExpenseRepository
+    private lateinit var mapper: ExpenseMapper
 
     @Before
     fun setup() {
-        repository = ExpenseRepository()
+        mapper = ExpenseMapper()
     }
 
     // Date Parsing Tests
 
     @Test
     fun `parseDate handles LubeLogger format with spaces`() {
-        val result = invokeParseDate("4. 02. 2025")
+        val result = mapper.parseDate("4. 02. 2025")
         assertEquals(LocalDate.of(2025, 2, 4), result)
     }
 
     @Test
     fun `parseDate handles LubeLogger format single digit month`() {
-        val result = invokeParseDate("4. 2. 2025")
+        val result = mapper.parseDate("4. 2. 2025")
         assertEquals(LocalDate.of(2025, 2, 4), result)
     }
 
     @Test
     fun `parseDate handles LubeLogger format with leading zeros`() {
-        val result = invokeParseDate("04. 02. 2025")
+        val result = mapper.parseDate("04. 02. 2025")
         assertEquals(LocalDate.of(2025, 2, 4), result)
     }
 
     @Test
     fun `parseDate handles ISO format`() {
-        val result = invokeParseDate("2024-01-15")
+        val result = mapper.parseDate("2024-01-15")
         assertEquals(LocalDate.of(2024, 1, 15), result)
     }
 
     @Test
     fun `parseDate handles US format MM-dd-yyyy`() {
-        val result = invokeParseDate("1/15/2024")
+        val result = mapper.parseDate("1/15/2024")
         assertEquals(LocalDate.of(2024, 1, 15), result)
     }
 
     @Test
     fun `parseDate handles US format with leading zeros`() {
-        val result = invokeParseDate("01/15/2024")
+        val result = mapper.parseDate("01/15/2024")
         assertEquals(LocalDate.of(2024, 1, 15), result)
     }
 
     @Test
     fun `parseDate handles European format dd-MM-yyyy`() {
-        val result = invokeParseDate("15/01/2024")
+        val result = mapper.parseDate("15/01/2024")
         assertEquals(LocalDate.of(2024, 1, 15), result)
     }
 
     @Test
     fun `parseDate handles ISO datetime format`() {
-        val result = invokeParseDate("2024-01-15T10:30:00")
+        val result = mapper.parseDate("2024-01-15T10:30:00")
         assertEquals(LocalDate.of(2024, 1, 15), result)
     }
 
     @Test
     fun `parseDate throws for malformed input`() {
         assertThrows(IllegalArgumentException::class.java) {
-            invokeParseDate("not-a-date")
+            mapper.parseDate("not-a-date")
         }
     }
 
     @Test
     fun `parseDate throws for empty string`() {
         assertThrows(IllegalArgumentException::class.java) {
-            invokeParseDate("")
+            mapper.parseDate("")
         }
     }
 
@@ -82,67 +83,67 @@ class ExpenseRepositoryTest {
 
     @Test
     fun `parseNumber handles European format with comma decimal`() {
-        val result = invokeParseNumber("1.234,56")
+        val result = mapper.parseNumber("1.234,56")
         assertEquals(1234.56, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles US format with dot decimal`() {
-        val result = invokeParseNumber("1,234.56")
+        val result = mapper.parseNumber("1,234.56")
         assertEquals(1234.56, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles simple decimal with comma`() {
-        val result = invokeParseNumber("123,45")
+        val result = mapper.parseNumber("123,45")
         assertEquals(123.45, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles simple decimal with dot`() {
-        val result = invokeParseNumber("123.45")
+        val result = mapper.parseNumber("123.45")
         assertEquals(123.45, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles integer`() {
-        val result = invokeParseNumber("1234")
+        val result = mapper.parseNumber("1234")
         assertEquals(1234.0, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles thousand separator only comma`() {
-        val result = invokeParseNumber("1,234")
+        val result = mapper.parseNumber("1,234")
         assertEquals(1234.0, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles null input`() {
-        val result = invokeParseNumber(null)
+        val result = mapper.parseNumber(null)
         assertEquals(0.0, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles empty string`() {
-        val result = invokeParseNumber("")
+        val result = mapper.parseNumber("")
         assertEquals(0.0, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles blank string`() {
-        val result = invokeParseNumber("   ")
+        val result = mapper.parseNumber("   ")
         assertEquals(0.0, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles spaces in number`() {
-        val result = invokeParseNumber("1 234.56")
+        val result = mapper.parseNumber("1 234.56")
         assertEquals(1234.56, result, 0.01)
     }
 
     @Test
     fun `parseNumber handles malformed input`() {
-        val result = invokeParseNumber("not-a-number")
+        val result = mapper.parseNumber("not-a-number")
         assertEquals(0.0, result, 0.01)
     }
 
@@ -150,57 +151,37 @@ class ExpenseRepositoryTest {
 
     @Test
     fun `parseMileage returns integer from valid input`() {
-        val result = invokeParseMileage("12345")
+        val result = mapper.parseMileage("12345")
         assertEquals(12345, result)
     }
 
     @Test
     fun `parseMileage handles decimal input`() {
-        val result = invokeParseMileage("12345.67")
+        val result = mapper.parseMileage("12345.67")
         assertEquals(12345, result)
     }
 
     @Test
     fun `parseMileage returns null for null input`() {
-        val result = invokeParseMileage(null)
+        val result = mapper.parseMileage(null)
         assertNull(result)
     }
 
     @Test
     fun `parseMileage returns null for empty string`() {
-        val result = invokeParseMileage("")
+        val result = mapper.parseMileage("")
         assertNull(result)
     }
 
     @Test
     fun `parseMileage returns null for zero value`() {
-        val result = invokeParseMileage("0")
+        val result = mapper.parseMileage("0")
         assertNull(result)
     }
 
     @Test
     fun `parseMileage handles European format`() {
-        val result = invokeParseMileage("12.345")
+        val result = mapper.parseMileage("12.345")
         assertEquals(12345, result)
-    }
-
-    // Helper methods to access private functions via reflection
-
-    private fun invokeParseDate(dateString: String): LocalDate {
-        val method = ExpenseRepository::class.java.getDeclaredMethod("parseDate", String::class.java)
-        method.isAccessible = true
-        return method.invoke(repository, dateString) as LocalDate
-    }
-
-    private fun invokeParseNumber(value: String?): Double {
-        val method = ExpenseRepository::class.java.getDeclaredMethod("parseNumber", String::class.java)
-        method.isAccessible = true
-        return method.invoke(repository, value) as Double
-    }
-
-    private fun invokeParseMileage(value: String?): Int? {
-        val method = ExpenseRepository::class.java.getDeclaredMethod("parseMileage", String::class.java)
-        method.isAccessible = true
-        return method.invoke(repository, value) as Int?
     }
 }
