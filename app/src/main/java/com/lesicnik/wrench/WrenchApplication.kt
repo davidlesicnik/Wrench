@@ -5,6 +5,7 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.lesicnik.wrench.data.remote.LocalHttpOnlyInterceptor
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -28,6 +29,7 @@ class WrenchApplication : Application(), ImageLoaderFactory {
         }
 
         val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(LocalHttpOnlyInterceptor())
             .addNetworkInterceptor(redirectFixInterceptor)
             .followRedirects(false)
             .followSslRedirects(false)
