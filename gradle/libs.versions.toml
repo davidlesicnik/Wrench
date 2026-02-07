@@ -15,7 +15,7 @@ lifecycleViewmodelCompose = "2.10.0"
 coil = "2.6.0"
 securityCrypto = "1.1.0-alpha06"
 robolectric = "4.16.1"
-androidxTestCore = "1.5.0"
+androidxTestCore = "1.7.0"
 coroutinesTest = "1.10.2"
 vico = "2.0.1"
 
