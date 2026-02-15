@@ -17,7 +17,7 @@ securityCrypto = "1.1.0-alpha06"
 robolectric = "4.16.1"
 androidxTestCore = "1.5.0"
 coroutinesTest = "1.10.2"
-vico = "2.0.1"
+vico = "2.4.3"
 room = "2.7.2"
 work = "2.10.4"
 
