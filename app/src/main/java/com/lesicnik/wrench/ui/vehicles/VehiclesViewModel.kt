@@ -3,8 +3,8 @@ package com.lesicnik.wrench.ui.vehicles
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.remote.NetworkModule
+import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
@@ -36,7 +36,7 @@ class VehiclesViewModel(
         loadVehicles()
     }
 
-    fun loadVehicles() {
+    fun loadVehicles(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
@@ -49,7 +49,13 @@ class VehiclesViewModel(
                 return@launch
             }
 
-            when (val result = vehicleRepository.getVehicles(credentials.serverUrl, credentials.apiKey)) {
+            val result = if (forceRefresh) {
+                vehicleRepository.fetchVehiclesRemote(credentials.serverUrl, credentials.apiKey)
+            } else {
+                vehicleRepository.getVehicles(credentials.serverUrl, credentials.apiKey)
+            }
+
+            when (result) {
                 is ApiResult.Success -> {
                     _uiState.value = _uiState.value.copy(
                         vehicles = result.data,
@@ -59,10 +65,21 @@ class VehiclesViewModel(
                     )
                 }
                 is ApiResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = result.message
-                    )
+                    val fallback = vehicleRepository.getCachedVehicles(credentials.serverUrl)
+                    if (fallback.isNotEmpty()) {
+                        _uiState.value = _uiState.value.copy(
+                            vehicles = fallback,
+                            isLoading = false,
+                            serverUrl = credentials.serverUrl,
+                            apiKey = credentials.apiKey,
+                            errorMessage = result.message
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = result.message
+                        )
+                    }
                 }
             }
         }

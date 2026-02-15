@@ -199,7 +199,7 @@ fun AddEditExpenseScreen(
                     if (uiState.isEditMode) {
                         IconButton(
                             onClick = { viewModel.showDeleteDialog() },
-                            enabled = !uiState.isLoading && !uiState.isDeleting
+                            enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -517,7 +517,7 @@ fun AddEditExpenseScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
-                    enabled = !uiState.isLoading && !uiState.isDeleting,
+                    enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = animatedButtonColor
                     )
@@ -580,6 +580,58 @@ fun AddEditExpenseScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+
+    // Conflict Resolution Dialog
+    if (uiState.showConflictResolutionDialog) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Resolve Conflict") },
+            text = {
+                Column {
+                    Text(
+                        text = "This expense was changed on another device/server while you had local changes.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (!uiState.conflictReason.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.conflictReason ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Choose which version to keep:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.resolveConflictKeepMine() },
+                    enabled = !uiState.isResolvingConflict
+                ) {
+                    if (uiState.isResolvingConflict) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Keep mine")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.resolveConflictUseServer() },
+                    enabled = !uiState.isResolvingConflict
+                ) {
+                    Text("Use server")
+                }
+            }
+        )
     }
 
     // Discard Changes Dialog

@@ -65,6 +65,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.remote.records.ExpenseType
+import com.lesicnik.wrench.data.sync.ExpenseSyncState
 import com.lesicnik.wrench.ui.components.BottomBarWithFab
 import com.lesicnik.wrench.ui.components.BottomBarHeight
 import com.lesicnik.wrench.ui.components.BottomTab
@@ -370,6 +371,26 @@ private fun ExpenseCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                if (expense.syncState != ExpenseSyncState.SYNCED) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = when (expense.syncState) {
+                            ExpenseSyncState.PENDING_CREATE,
+                            ExpenseSyncState.PENDING_UPDATE,
+                            ExpenseSyncState.PENDING_DELETE -> "Pending sync"
+                            ExpenseSyncState.CONFLICT -> "Conflict - open and save to keep local changes"
+                            ExpenseSyncState.SYNC_ERROR -> "Sync error"
+                            ExpenseSyncState.SYNCED -> ""
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (expense.syncState) {
+                            ExpenseSyncState.CONFLICT,
+                            ExpenseSyncState.SYNC_ERROR -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.tertiary
+                        }
+                    )
+                }
 
                 // Fuel-specific details: liters and economy
                 if (expense.liters != null || expense.fuelEconomy != null) {

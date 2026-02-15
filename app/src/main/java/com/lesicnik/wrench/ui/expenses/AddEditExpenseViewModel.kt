@@ -8,6 +8,7 @@ import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
+import com.lesicnik.wrench.data.sync.ExpenseSyncState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,15 +34,16 @@ data class AddEditExpenseUiState(
     val originalExpense: Expense? = null,
     val showDiscardDialog: Boolean = false,
     val showDeleteDialog: Boolean = false,
+    val showConflictResolutionDialog: Boolean = false,
+    val conflictReason: String? = null,
+    val isResolvingConflict: Boolean = false,
     val isDeleting: Boolean = false,
     val isDeleted: Boolean = false
 ) {
     val isDirty: Boolean
         get() {
             val original = originalExpense ?: return false
-            // Convert original cost to POS-style digits for comparison (e.g., 45.55 -> "4555")
             val originalCostDigits = ((original.cost * 100).toLong()).toString()
-            // Convert original liters to POS-style digits for comparison (e.g., 31.98 -> "3198")
             val originalFuelDigits = original.liters?.let { ((it * 100).toLong()).toString() } ?: ""
             return expenseType != original.type ||
                     date != original.date ||
@@ -65,9 +67,7 @@ class AddEditExpenseViewModel(
     fun initializeForEdit(expenseId: Int, expenseType: ExpenseType) {
         val expense = expenseRepository.getExpenseById(vehicleId, expenseId, expenseType)
         if (expense != null) {
-            // Convert cost to POS-style digits (e.g., 45.55 -> "4555")
             val costDigits = ((expense.cost * 100).toLong()).toString()
-            // Convert liters to POS-style digits (e.g., 31.98 -> "3198")
             val fuelDigits = expense.liters?.let { ((it * 100).toLong()).toString() } ?: ""
             _uiState.value = AddEditExpenseUiState(
                 expenseType = expense.type,
@@ -81,7 +81,9 @@ class AddEditExpenseViewModel(
                 isMissedFuelUp = false,
                 isRecurring = false,
                 isEditMode = true,
-                originalExpense = expense
+                originalExpense = expense,
+                showConflictResolutionDialog = expense.syncState == ExpenseSyncState.CONFLICT,
+                conflictReason = expense.syncError
             )
         }
     }
@@ -103,16 +105,12 @@ class AddEditExpenseViewModel(
     }
 
     fun onCostChanged(cost: String) {
-        // POS-style: store only digits, visual transformation handles display
         val digits = cost.filter { it.isDigit() }
-        // Limit to reasonable length (max 99,999,999.99 = 10 digits)
         val limited = if (digits.length > 10) digits.takeLast(10) else digits
-        // Remove leading zeros (but keep at least one digit if all zeros)
         val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
         _uiState.value = _uiState.value.copy(cost = trimmed)
     }
 
-    // Convert stored digits to decimal for saving (e.g., "4555" -> 45.55)
     fun getCostAsDecimal(): Double? {
         val digits = _uiState.value.cost
         if (digits.isEmpty()) return null
@@ -127,16 +125,12 @@ class AddEditExpenseViewModel(
     }
 
     fun onFuelConsumedChanged(fuelConsumed: String) {
-        // POS-style: store only digits, visual transformation handles display
         val digits = fuelConsumed.filter { it.isDigit() }
-        // Limit to reasonable length (max 9999.99 liters = 6 digits)
         val limited = if (digits.length > 6) digits.takeLast(6) else digits
-        // Remove leading zeros (but keep at least one digit if all zeros)
         val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
         _uiState.value = _uiState.value.copy(fuelConsumed = trimmed)
     }
 
-    // Convert stored digits to decimal for saving (e.g., "3198" -> 31.98)
     fun getFuelConsumedAsDecimal(): Double? {
         val digits = _uiState.value.fuelConsumed
         if (digits.isEmpty()) return null
@@ -176,6 +170,90 @@ class AddEditExpenseViewModel(
 
     fun dismissDeleteDialog() {
         _uiState.value = _uiState.value.copy(showDeleteDialog = false)
+    }
+
+    fun dismissConflictResolutionDialog() {
+        _uiState.value = _uiState.value.copy(showConflictResolutionDialog = false)
+    }
+
+    fun resolveConflictKeepMine() {
+        val state = _uiState.value
+        val expense = state.originalExpense ?: return
+
+        viewModelScope.launch {
+            _uiState.value = state.copy(isResolvingConflict = true, errorMessage = null)
+
+            val credentials = credentialsRepository.getCredentials()
+            if (credentials == null) {
+                _uiState.value = _uiState.value.copy(
+                    isResolvingConflict = false,
+                    errorMessage = "Not logged in"
+                )
+                return@launch
+            }
+
+            when (
+                val result = expenseRepository.resolveConflictKeepMine(
+                    serverUrl = credentials.serverUrl,
+                    vehicleId = vehicleId,
+                    expenseId = expense.id
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingConflict = false,
+                        showConflictResolutionDialog = false,
+                        isSaved = true
+                    )
+                }
+                is ApiResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingConflict = false,
+                        errorMessage = result.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun resolveConflictUseServer() {
+        val state = _uiState.value
+        val expense = state.originalExpense ?: return
+
+        viewModelScope.launch {
+            _uiState.value = state.copy(isResolvingConflict = true, errorMessage = null)
+
+            val credentials = credentialsRepository.getCredentials()
+            if (credentials == null) {
+                _uiState.value = _uiState.value.copy(
+                    isResolvingConflict = false,
+                    errorMessage = "Not logged in"
+                )
+                return@launch
+            }
+
+            when (
+                val result = expenseRepository.resolveConflictUseServer(
+                    serverUrl = credentials.serverUrl,
+                    vehicleId = vehicleId,
+                    expenseId = expense.id
+                )
+            ) {
+                is ApiResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingConflict = false,
+                        showConflictResolutionDialog = false,
+                        isSaved = true
+                    )
+                }
+                is ApiResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isResolvingConflict = false,
+                        errorMessage = result.message
+                    )
+                }
+            }
+        }
     }
 
     fun confirmDelete() {
@@ -224,7 +302,6 @@ class AddEditExpenseViewModel(
     fun saveExpense() {
         val state = _uiState.value
 
-        // Validation - convert POS digits to decimal
         val cost = getCostAsDecimal()
         if (cost == null || cost <= 0) {
             _uiState.value = state.copy(errorMessage = "Please enter a valid cost")
@@ -257,7 +334,6 @@ class AddEditExpenseViewModel(
             }
 
             val result = if (state.isEditMode && state.originalExpense != null) {
-                // Edit mode: delete old + add new
                 expenseRepository.updateExpense(
                     serverUrl = credentials.serverUrl,
                     apiKey = credentials.apiKey,
@@ -276,7 +352,6 @@ class AddEditExpenseViewModel(
                     isRecurring = state.isRecurring
                 )
             } else {
-                // Add mode
                 expenseRepository.addExpense(
                     serverUrl = credentials.serverUrl,
                     apiKey = credentials.apiKey,
