@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.data.remote.records
 
+import com.lesicnik.wrench.data.sync.ExpenseSyncState
 import java.time.LocalDate
 
 enum class ExpenseType {
@@ -19,5 +20,7 @@ data class Expense(
     val description: String,
     val notes: String? = null,
     val liters: Double? = null,
-    val fuelEconomy: Double? = null // L/100km
+    val fuelEconomy: Double? = null, // L/100km
+    val syncState: ExpenseSyncState = ExpenseSyncState.SYNCED,
+    val syncError: String? = null
 )

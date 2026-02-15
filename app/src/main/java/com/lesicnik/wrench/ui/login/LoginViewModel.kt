@@ -21,7 +21,9 @@ data class LoginUiState(
     val isLoggedIn: Boolean = false,
     val isCheckingStoredCredentials: Boolean = true,
     val showHttpWarning: Boolean = false,
-    val pendingHttpLogin: Boolean = false
+    val pendingHttpLogin: Boolean = false,
+    val showOfflinePrompt: Boolean = false,
+    val offlinePromptMessage: String? = null
 )
 
 class LoginViewModel(
@@ -62,7 +64,6 @@ class LoginViewModel(
 
     fun onSaveCredentialsChanged(save: Boolean) {
         _uiState.value = _uiState.value.copy(saveCredentials = save)
-        // When unchecking "Save credentials", delete any stored credentials
         if (!save) {
             viewModelScope.launch {
                 credentialsRepository.deleteCredentials()
@@ -83,6 +84,31 @@ class LoginViewModel(
         performLogin(autoLogin = false)
     }
 
+    fun dismissOfflinePrompt() {
+        _uiState.value = _uiState.value.copy(showOfflinePrompt = false)
+    }
+
+    fun continueOfflineLogin() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            if (state.saveCredentials) {
+                credentialsRepository.saveCredentials(state.serverUrl, state.apiKey)
+            }
+            _uiState.value = _uiState.value.copy(
+                showOfflinePrompt = false,
+                offlinePromptMessage = null,
+                isLoading = false,
+                errorMessage = null,
+                isLoggedIn = true
+            )
+        }
+    }
+
+    fun retryOnlineLogin() {
+        _uiState.value = _uiState.value.copy(showOfflinePrompt = false, offlinePromptMessage = null)
+        performLogin(autoLogin = false)
+    }
+
     fun login(autoLogin: Boolean = false) {
         val state = _uiState.value
 
@@ -96,7 +122,6 @@ class LoginViewModel(
             return
         }
 
-        // Allow HTTP only for local addresses; show warning for local HTTP opt-in
         if (state.serverUrl.trim().lowercase().startsWith("http://")) {
             if (!LocalNetwork.isLocalHttpUrl(state.serverUrl)) {
                 _uiState.value = state.copy(
@@ -119,7 +144,7 @@ class LoginViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
-            when (val result = vehicleRepository.getVehicles(state.serverUrl, state.apiKey)) {
+            when (val result = vehicleRepository.fetchVehiclesRemote(state.serverUrl, state.apiKey)) {
                 is ApiResult.Success -> {
                     if (state.saveCredentials && !autoLogin) {
                         credentialsRepository.saveCredentials(state.serverUrl, state.apiKey)
@@ -130,10 +155,19 @@ class LoginViewModel(
                     )
                 }
                 is ApiResult.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = result.message
-                    )
+                    val hasCachedData = vehicleRepository.hasCachedVehicles(state.serverUrl)
+                    if (hasCachedData) {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            showOfflinePrompt = true,
+                            offlinePromptMessage = result.message
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = result.message
+                        )
+                    }
                 }
             }
         }

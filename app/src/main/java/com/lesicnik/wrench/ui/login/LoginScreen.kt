@@ -91,6 +91,15 @@ fun LoginScreen(
         )
     }
 
+    if (uiState.showOfflinePrompt) {
+        OfflineLoginDialog(
+            message = uiState.offlinePromptMessage ?: "Server unavailable",
+            onDismiss = { viewModel.dismissOfflinePrompt() },
+            onContinueOffline = { viewModel.continueOfflineLogin() },
+            onRetry = { viewModel.retryOnlineLogin() }
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
@@ -321,6 +330,62 @@ private fun HttpWarningDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun OfflineLoginDialog(
+    message: String,
+    onDismiss: () -> Unit,
+    onContinueOffline: () -> Unit,
+    onRetry: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        },
+        title = {
+            Text("Continue Offline?")
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Unable to reach the server right now.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "You can continue with cached data and sync later.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onContinueOffline) {
+                Text("Continue Offline")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onRetry) {
+                    Text("Retry")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         }
     )
