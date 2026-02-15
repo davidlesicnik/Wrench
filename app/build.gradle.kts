@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    id("org.jetbrains.kotlin.kapt")
 }
 
 val isCiBuild = System.getenv("GITHUB_ACTIONS")?.equals("true", ignoreCase = true) == true
@@ -26,8 +27,8 @@ android {
         applicationId = "com.lesicnik.wrench"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "2"
+        versionCode = 3
+        versionName = "3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -170,6 +171,12 @@ dependencies {
 
     // Charts
     implementation(libs.vico.compose.m3)
+
+    // Offline cache + sync
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    kapt(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

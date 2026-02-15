@@ -42,16 +42,6 @@ class ExpensesViewModel(
 
     fun loadExpenses(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            // Check for cached data first
-            val cachedExpenses = expenseRepository.getCachedExpenses(vehicleId)
-            if (cachedExpenses != null && !forceRefresh) {
-                _uiState.value = _uiState.value.copy(
-                    expenses = cachedExpenses,
-                    isLoading = false
-                )
-                return@launch
-            }
-
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
             val credentials = credentialsRepository.getCredentials()

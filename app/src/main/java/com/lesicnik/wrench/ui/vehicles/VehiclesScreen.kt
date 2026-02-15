@@ -91,7 +91,7 @@ fun VehiclesScreen(
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    IconButton(onClick = { viewModel.loadVehicles() }) {
+                    IconButton(onClick = { viewModel.loadVehicles(forceRefresh = true) }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh"
@@ -110,7 +110,7 @@ fun VehiclesScreen(
     ) { paddingValues ->
         PullToRefreshBox(
             isRefreshing = uiState.isLoading,
-            onRefresh = { viewModel.loadVehicles() },
+            onRefresh = { viewModel.loadVehicles(forceRefresh = true) },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -129,7 +129,7 @@ fun VehiclesScreen(
                     ErrorContent(
                         title = "Failed to load vehicles",
                         message = uiState.errorMessage ?: "Unknown error",
-                        onRetry = { viewModel.loadVehicles() },
+                        onRetry = { viewModel.loadVehicles(forceRefresh = true) },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
