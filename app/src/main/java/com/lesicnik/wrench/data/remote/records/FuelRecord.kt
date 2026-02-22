@@ -13,6 +13,8 @@ data class FuelRecord(
     val fuelConsumed: String?,
     @SerializedName("isFillToFull")
     val isFillToFull: String?,
+    @SerializedName("missedFuelUp")
+    val missedFuelUp: String? = null,
     @SerializedName("cost")
     val cost: String?,
     @SerializedName("notes")

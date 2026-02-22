@@ -22,6 +22,7 @@ import com.lesicnik.wrench.data.repository.offline.toJson as snapshotToJson
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
+import kotlin.math.abs
 
 class OfflineSyncEngine(
     private val database: WrenchDatabase,
@@ -309,6 +310,17 @@ class OfflineSyncEngine(
             }
         }
 
+        val syncedUnlinkedCandidates = localExpenses
+            .filter {
+                val state = runCatching { ExpenseSyncState.valueOf(it.syncState) }
+                    .getOrDefault(ExpenseSyncState.SYNCED)
+                state == ExpenseSyncState.SYNCED &&
+                    it.remoteId == null &&
+                    !it.isDeletedLocal &&
+                    !activePending.containsKey(it.localId)
+            }
+            .toMutableList()
+
         for (remote in remoteSnapshots) {
             val key = remote.type.name to remote.remoteId
             if (consumedRemoteKeys.contains(key)) continue
@@ -327,19 +339,14 @@ class OfflineSyncEngine(
             }
 
             val fingerprint = remote.computeFingerprint()
-            val candidate = expenseDao.findBySyncStates(
-                serverUrl = serverUrl,
-                vehicleRemoteId = vehicleRemoteId,
-                syncStates = listOf(ExpenseSyncState.SYNCED.name)
-            ).firstOrNull {
-                it.remoteId == null &&
-                    !it.isDeletedLocal &&
-                    it.computeFingerprint() == fingerprint &&
-                    !activePending.containsKey(it.localId)
+            val candidateIndex = syncedUnlinkedCandidates.indexOfFirst {
+                it.computeFingerprint() == fingerprint || it.matchesRemoteForLinking(remote)
             }
+            val candidate = syncedUnlinkedCandidates.getOrNull(candidateIndex)
 
             if (candidate != null) {
                 expenseDao.updateExpense(candidate.mergeFromRemote(remote, nowForReconcile))
+                syncedUnlinkedCandidates.removeAt(candidateIndex)
                 consumedRemoteKeys += key
                 continue
             }
@@ -448,9 +455,9 @@ class OfflineSyncEngine(
             date = date.toString(),
             odometer = entity.odometer?.toString().orEmpty(),
             description = if (type == ExpenseType.FUEL) "Fuel" else entity.description,
-            cost = String.format(java.util.Locale.US, "%.2f", entity.cost),
+            cost = formatForRemoteApi(entity.cost),
             notes = entity.notes.orEmpty(),
-            fuelConsumed = entity.liters?.let { String.format(java.util.Locale.US, "%.2f", it) }.orEmpty(),
+            fuelConsumed = entity.liters?.let(::formatForRemoteApi).orEmpty(),
             isFillToFull = (entity.isFillToFull ?: true).toString(),
             missedFuelUp = (entity.isMissedFuelUp ?: false).toString(),
             isRecurring = (entity.isRecurring ?: false).toString()
@@ -459,6 +466,11 @@ class OfflineSyncEngine(
 
     private fun isNotFound(message: String): Boolean {
         return message.contains("404") || message.contains("Not Found", ignoreCase = true)
+    }
+
+    private fun formatForRemoteApi(value: Double): String {
+        // LubeLogger add endpoints expect comma decimals (e.g., "50,00"), not dot decimals.
+        return String.format(java.util.Locale.US, "%.2f", value).replace('.', ',')
     }
 
     private fun ExpenseEntity.mergeFromRemote(remote: RemoteExpenseSnapshot, now: Long): ExpenseEntity {
@@ -504,6 +516,22 @@ class OfflineSyncEngine(
             lastSyncedFingerprint = computeFingerprint(),
             lastSyncError = null
         )
+    }
+
+    private fun ExpenseEntity.matchesRemoteForLinking(remote: RemoteExpenseSnapshot): Boolean {
+        if (type != remote.type.name) return false
+        if (date != remote.date) return false
+        if (odometer != remote.odometer) return false
+        if (description.trim() != remote.description.trim()) return false
+        if ((notes ?: "").trim() != (remote.notes ?: "").trim()) return false
+        if (!cost.isSameAmountAs(remote.cost)) return false
+        if (!liters.isSameAmountAs(remote.liters)) return false
+
+        if (isFillToFull != null && remote.isFillToFull != null && isFillToFull != remote.isFillToFull) return false
+        if (isMissedFuelUp != null && remote.isMissedFuelUp != null && isMissedFuelUp != remote.isMissedFuelUp) return false
+        if (isRecurring != null && remote.isRecurring != null && isRecurring != remote.isRecurring) return false
+
+        return true
     }
 }
 
@@ -580,7 +608,7 @@ private fun ExpenseRecordBundle.toSnapshots(
             notes = expense.notes,
             liters = expense.liters,
             isFillToFull = record.isFillToFull.toBooleanStrictOrNullLenient(),
-            isMissedFuelUp = null,
+            isMissedFuelUp = record.missedFuelUp.toBooleanStrictOrNullLenient(),
             isRecurring = null
         )
     }
@@ -612,4 +640,9 @@ private fun String?.toBooleanStrictOrNullLenient(): Boolean? {
         "false", "0", "no", "n" -> false
         else -> null
     }
+}
+
+private fun Double?.isSameAmountAs(other: Double?): Boolean {
+    if (this == null || other == null) return this == other
+    return abs(this - other) < 0.0001
 }
