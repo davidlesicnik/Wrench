@@ -43,6 +43,7 @@ class ExpenseMapperTest {
             odometer = "1.234",
             fuelConsumed = "31,98",
             isFillToFull = "true",
+            missedFuelUp = "true",
             cost = "1.234,56",
             notes = null
         )
@@ -51,6 +52,7 @@ class ExpenseMapperTest {
         assertEquals(1234, expense.odometer)
         assertEquals(31.98, expense.liters ?: 0.0, 0.0001)
         assertEquals(1234.56, expense.cost, 0.0001)
+        assertEquals(true, expense.isFillToFull)
+        assertEquals(true, expense.isMissedFuelUp)
     }
 }
-

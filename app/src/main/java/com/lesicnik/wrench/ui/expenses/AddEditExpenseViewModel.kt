@@ -51,7 +51,10 @@ data class AddEditExpenseUiState(
                     description != original.description ||
                     cost != originalCostDigits ||
                     notes != (original.notes ?: "") ||
-                    fuelConsumed != originalFuelDigits
+                    fuelConsumed != originalFuelDigits ||
+                    isFillToFull != (original.isFillToFull ?: true) ||
+                    isMissedFuelUp != (original.isMissedFuelUp ?: false) ||
+                    isRecurring != (original.isRecurring ?: false)
         }
 }
 
@@ -77,9 +80,9 @@ class AddEditExpenseViewModel(
                 cost = costDigits,
                 notes = expense.notes ?: "",
                 fuelConsumed = fuelDigits,
-                isFillToFull = true,
-                isMissedFuelUp = false,
-                isRecurring = false,
+                isFillToFull = expense.isFillToFull ?: true,
+                isMissedFuelUp = expense.isMissedFuelUp ?: false,
+                isRecurring = expense.isRecurring ?: false,
                 isEditMode = true,
                 originalExpense = expense,
                 showConflictResolutionDialog = expense.syncState == ExpenseSyncState.CONFLICT,

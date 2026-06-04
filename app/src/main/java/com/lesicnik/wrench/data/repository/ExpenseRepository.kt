@@ -487,6 +487,7 @@ class ExpenseRepository(
                     odometer = entity.odometer?.toString(),
                     fuelConsumed = entity.liters?.let { "%.2f".format(Locale.US, it) },
                     isFillToFull = entity.isFillToFull?.toString(),
+                    missedFuelUp = entity.isMissedFuelUp?.toString(),
                     cost = "%.2f".format(Locale.US, entity.cost),
                     notes = entity.notes
                 )
@@ -519,7 +520,8 @@ class ExpenseRepository(
                     date = expense.date.toString(),
                     odometer = expense.odometer?.toString(),
                     fuelConsumed = expense.liters?.let { "%.2f".format(Locale.US, it) },
-                    isFillToFull = "true",
+                    isFillToFull = expense.isFillToFull?.toString(),
+                    missedFuelUp = expense.isMissedFuelUp?.toString(),
                     cost = "%.2f".format(Locale.US, expense.cost),
                     notes = expense.notes
                 )

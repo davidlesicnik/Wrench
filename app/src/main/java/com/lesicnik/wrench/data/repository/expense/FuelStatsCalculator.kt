@@ -10,27 +10,8 @@ class FuelStatsCalculator {
         parseMileage: (String?) -> Int?,
         parseNumber: (String?) -> Double
     ): Map<Int, Double> {
-        val sortedFuel = fuelRecords
-            .filter { parseMileage(it.odometer) != null }
-            .sortedBy { parseMileage(it.odometer) }
-
-        val odometerToFuelEconomy = mutableMapOf<Int, Double>()
-        for (i in 1 until sortedFuel.size) {
-            val current = sortedFuel[i]
-            val previous = sortedFuel[i - 1]
-
-            val currentOdo = parseMileage(current.odometer) ?: continue
-            val prevOdo = parseMileage(previous.odometer) ?: continue
-            val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
-
-            val distance = currentOdo - prevOdo
-            if (distance > 0 && liters > 0) {
-                val economy = (liters / distance) * 100
-                odometerToFuelEconomy[currentOdo] = economy
-            }
-        }
-
-        return odometerToFuelEconomy
+        return computeFuelEconomies(fuelRecords, parseMileage, parseNumber)
+            .associate { it.odometer to it.economy }
     }
 
     fun computeFuelStatistics(
@@ -45,34 +26,71 @@ class FuelStatsCalculator {
         val sortedFuel = fuelRecords
             .filter { parseMileage(it.odometer) != null }
             .sortedBy { parseMileage(it.odometer) }
-
-        val fuelEconomies = mutableListOf<Double>()
-        var lastFuelEconomy: Double? = null
-
-        for (i in 1 until sortedFuel.size) {
-            val current = sortedFuel[i]
-            val previous = sortedFuel[i - 1]
-
-            val currentOdo = parseMileage(current.odometer) ?: continue
-            val prevOdo = parseMileage(previous.odometer) ?: continue
-            val liters = current.fuelConsumed?.let { parseNumber(it) } ?: continue
-
-            val distance = currentOdo - prevOdo
-            if (distance > 0 && liters > 0) {
-                val economy = (liters / distance) * 100
-                fuelEconomies.add(economy)
-                lastFuelEconomy = economy
-            }
-        }
+        val fuelEconomies = computeFuelEconomies(sortedFuel, parseMileage, parseNumber)
+            .map { it.economy }
 
         val averageFuelEconomy = fuelEconomies.takeIf { it.isNotEmpty() }?.average()
         val lastOdometer = sortedFuel.lastOrNull()?.let { parseMileage(it.odometer) }
 
         return FuelStatistics(
             averageFuelConsumption = averageFuelEconomy,
-            lastFuelConsumption = lastFuelEconomy,
+            lastFuelConsumption = fuelEconomies.lastOrNull(),
             lastOdometer = lastOdometer
         )
     }
-}
 
+    private fun computeFuelEconomies(
+        fuelRecords: List<FuelRecord>,
+        parseMileage: (String?) -> Int?,
+        parseNumber: (String?) -> Double
+    ): List<FuelEconomyAtOdometer> {
+        val sortedFuel = fuelRecords
+            .filter { parseMileage(it.odometer) != null }
+            .sortedBy { parseMileage(it.odometer) }
+
+        val fuelEconomies = mutableListOf<FuelEconomyAtOdometer>()
+        var lastFullOdometer: Int? = null
+        var pendingLiters = 0.0
+
+        sortedFuel.forEach { record ->
+            val odometer = parseMileage(record.odometer) ?: return@forEach
+            val liters = record.fuelConsumed?.let { parseNumber(it) } ?: 0.0
+            val isFillToFull = record.isFillToFull.toBooleanLenientOrNull() != false
+
+            if (record.missedFuelUp.toBooleanLenientOrNull() == true) {
+                pendingLiters = 0.0
+                lastFullOdometer = odometer.takeIf { isFillToFull }
+                return@forEach
+            }
+
+            if (!isFillToFull) {
+                if (liters > 0) {
+                    pendingLiters += liters
+                }
+                return@forEach
+            }
+
+            val previousFullOdometer = lastFullOdometer
+            if (previousFullOdometer != null) {
+                val distance = odometer - previousFullOdometer
+                val totalLiters = pendingLiters + liters
+                if (distance > 0 && totalLiters > 0) {
+                    fuelEconomies += FuelEconomyAtOdometer(
+                        odometer = odometer,
+                        economy = (totalLiters / distance) * 100
+                    )
+                }
+            }
+
+            lastFullOdometer = odometer
+            pendingLiters = 0.0
+        }
+
+        return fuelEconomies
+    }
+
+    private data class FuelEconomyAtOdometer(
+        val odometer: Int,
+        val economy: Double
+    )
+}
