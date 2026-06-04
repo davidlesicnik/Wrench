@@ -46,6 +46,9 @@ fun ExpenseEntity.toDomain(): Expense = Expense(
     notes = notes,
     liters = liters,
     fuelEconomy = fuelEconomy,
+    isFillToFull = isFillToFull,
+    isMissedFuelUp = isMissedFuelUp,
+    isRecurring = isRecurring,
     syncState = runCatching { ExpenseSyncState.valueOf(syncState) }.getOrDefault(ExpenseSyncState.SYNCED),
     syncError = lastSyncError
 )

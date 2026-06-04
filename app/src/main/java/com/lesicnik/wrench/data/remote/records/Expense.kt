@@ -21,6 +21,9 @@ data class Expense(
     val notes: String? = null,
     val liters: Double? = null,
     val fuelEconomy: Double? = null, // L/100km
+    val isFillToFull: Boolean? = null,
+    val isMissedFuelUp: Boolean? = null,
+    val isRecurring: Boolean? = null,
     val syncState: ExpenseSyncState = ExpenseSyncState.SYNCED,
     val syncError: String? = null
 )

@@ -68,7 +68,9 @@ class ExpenseMapper {
         description = "Fuel",
         notes = record.notes,
         liters = record.fuelConsumed?.let { parseNumber(it).takeIf { v -> v > 0 } },
-        fuelEconomy = fuelEconomy
+        fuelEconomy = fuelEconomy,
+        isFillToFull = record.isFillToFull.toBooleanLenientOrNull(),
+        isMissedFuelUp = record.missedFuelUp.toBooleanLenientOrNull()
     )
 
     fun mapTaxRecord(record: TaxRecord): Expense = Expense(
@@ -165,5 +167,13 @@ class ExpenseMapper {
         }
 
         throw IllegalArgumentException("Unsupported date format: $cleanedDate")
+    }
+}
+
+fun String?.toBooleanLenientOrNull(): Boolean? {
+    return when (this?.trim()?.lowercase(Locale.US)) {
+        "true", "1", "yes", "y" -> true
+        "false", "0", "no", "n" -> false
+        else -> null
     }
 }

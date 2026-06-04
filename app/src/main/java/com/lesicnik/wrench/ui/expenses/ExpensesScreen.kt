@@ -392,23 +392,63 @@ private fun ExpenseCard(
                     )
                 }
 
-                // Fuel-specific details: liters and economy
-                if (expense.liters != null || expense.fuelEconomy != null) {
+                // Fuel-specific details: liters, flags, and economy
+                if (
+                    expense.liters != null ||
+                    expense.isFillToFull == false ||
+                    expense.isMissedFuelUp == true ||
+                    expense.fuelEconomy != null
+                ) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        var hasFuelDetail = false
+
                         expense.liters?.let { liters ->
                             Text(
                                 text = String.format(Locale.getDefault(), "%.2f L", liters),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            hasFuelDetail = true
+                        }
+
+                        if (expense.isFillToFull == false) {
+                            if (hasFuelDetail) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "Partial fill",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            hasFuelDetail = true
+                        }
+
+                        if (expense.isMissedFuelUp == true) {
+                            if (hasFuelDetail) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = "Missed last",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            hasFuelDetail = true
                         }
 
                         expense.fuelEconomy?.let { economy ->
-                            if (expense.liters != null) {
+                            if (hasFuelDetail) {
                                 Text(
                                     text = "•",
                                     style = MaterialTheme.typography.bodySmall,
