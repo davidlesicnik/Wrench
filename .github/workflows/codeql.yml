@@ -22,7 +22,7 @@ jobs:
       matrix:
         language: ["java-kotlin"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # For PRs, prefer the head SHA to avoid auto-merge refs producing confusing build inputs.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
