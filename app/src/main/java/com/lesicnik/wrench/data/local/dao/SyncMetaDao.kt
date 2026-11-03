@@ -9,6 +9,9 @@ import com.lesicnik.wrench.data.local.entity.SyncMetaEntity
 @Dao
 interface SyncMetaDao {
 
+    @Query("SELECT * FROM sync_meta WHERE serverUrl = :serverUrl AND vehicleRemoteId = :vehicleRemoteId LIMIT 1")
+    fun observeMeta(serverUrl: String, vehicleRemoteId: Int): kotlinx.coroutines.flow.Flow<SyncMetaEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMeta(meta: SyncMetaEntity)
 

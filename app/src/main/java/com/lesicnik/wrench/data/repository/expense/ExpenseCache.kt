@@ -7,7 +7,6 @@ import java.util.concurrent.ConcurrentHashMap
 class ExpenseCache {
     private val expensesCache = ConcurrentHashMap<Int, List<Expense>>()
     private val fuelStatsCache = ConcurrentHashMap<Int, FuelStatistics>()
-    private val preloadingVehicles = ConcurrentHashMap.newKeySet<Int>()
 
     fun getExpenses(vehicleId: Int): List<Expense>? = expensesCache[vehicleId]
 
@@ -29,13 +28,6 @@ class ExpenseCache {
     fun clearAll() {
         expensesCache.clear()
         fuelStatsCache.clear()
-        preloadingVehicles.clear()
     }
 
-    fun tryBeginPreload(vehicleId: Int): Boolean = preloadingVehicles.add(vehicleId)
-
-    fun endPreload(vehicleId: Int) {
-        preloadingVehicles.remove(vehicleId)
-    }
 }
-

@@ -20,9 +20,24 @@ import com.lesicnik.wrench.data.sync.ExpenseSyncState
 import com.lesicnik.wrench.data.sync.OfflineSyncEngine
 import com.lesicnik.wrench.data.sync.SyncOperationType
 import com.lesicnik.wrench.data.sync.SyncWorkScheduler
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+data class ExpenseSyncSummary(
+    val lastSyncedAt: Long? = null,
+    val pendingCount: Int = 0,
+    val problemCount: Int = 0,
+    val refreshError: String? = null
+)
 
 class ExpenseRepository(
     private val appContext: Context,
@@ -32,6 +47,78 @@ class ExpenseRepository(
     private val fuelStatsCalculator: FuelStatsCalculator = FuelStatsCalculator(),
     private val syncEngine: OfflineSyncEngine = OfflineSyncEngine(database)
 ) {
+
+    private val refreshErrors = MutableStateFlow<Map<Int, Pair<Long, String>>>(emptyMap())
+    private val sessionRefreshes = ConcurrentHashMap<String, CompletableDeferred<ApiResult<Unit>>>()
+    private val _sessionDataReady = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val sessionDataReady: SharedFlow<Unit> = _sessionDataReady.asSharedFlow()
+
+    /** Warm Room-backed caches immediately, then refresh the server once for the session. */
+    suspend fun preloadSessionData(serverUrl: String, apiKey: String, vehicleIds: List<Int>) {
+        val refresh = CompletableDeferred<ApiResult<Unit>>()
+        val existing = sessionRefreshes.putIfAbsent(serverUrl, refresh)
+        if (existing != null) {
+            existing.await()
+            return
+        }
+        try {
+            val result = withContext(Dispatchers.IO) {
+                for (vehicleId in vehicleIds) warmVehicleCache(serverUrl, vehicleId, includeEmpty = false)
+                _sessionDataReady.emit(Unit)
+                val synced = syncEngine.syncServer(serverUrl, apiKey, preferredVehicleIds = vehicleIds)
+                currentCoroutineContext().ensureActive()
+                for (vehicleId in vehicleIds) {
+                    warmVehicleCache(serverUrl, vehicleId, includeEmpty = synced is ApiResult.Success)
+                }
+                refreshErrors.update { errors ->
+                    when (synced) {
+                        is ApiResult.Success -> errors - vehicleIds.toSet()
+                        is ApiResult.Error -> errors + vehicleIds.associateWith { System.currentTimeMillis() to synced.message }
+                    }
+                }
+                synced
+            }
+            refresh.complete(result)
+            _sessionDataReady.emit(Unit)
+        } catch (cancelled: CancellationException) {
+            refresh.complete(ApiResult.Error("Background loading was interrupted"))
+            throw cancelled
+        } catch (error: Exception) {
+            refresh.complete(ApiResult.Error(error.message ?: "Background loading failed"))
+        } finally {
+            sessionRefreshes.remove(serverUrl, refresh)
+        }
+    }
+
+    private suspend fun warmVehicleCache(serverUrl: String, vehicleId: Int, includeEmpty: Boolean) {
+        val expenses = readLocalExpenses(serverUrl, vehicleId)
+        if (expenses.isNotEmpty() || includeEmpty || database.syncMetaDao().getMeta(serverUrl, vehicleId) != null) {
+            val statistics = computeFuelStatistics(expenses)
+            currentCoroutineContext().ensureActive()
+            cache.putExpenses(vehicleId, expenses)
+            cache.putFuelStatistics(vehicleId, statistics)
+        }
+    }
+
+    fun observeExpenses(serverUrl: String, vehicleId: Int): Flow<List<Expense>> =
+        database.expenseDao().observeVisibleExpenses(serverUrl, vehicleId).map {
+            readLocalExpenses(serverUrl, vehicleId).also { expenses -> cache.putExpenses(vehicleId, expenses) }
+        }
+
+    fun observeSyncSummary(serverUrl: String, vehicleId: Int): Flow<ExpenseSyncSummary> = combine(
+        database.syncMetaDao().observeMeta(serverUrl, vehicleId),
+        database.pendingSyncOpDao().observePending(serverUrl, vehicleId),
+        database.expenseDao().observeVisibleExpenses(serverUrl, vehicleId),
+        refreshErrors
+    ) { meta, pending, expenses, errors ->
+        val failure = errors[vehicleId]
+        ExpenseSyncSummary(
+            lastSyncedAt = meta?.lastFullSyncAt,
+            pendingCount = pending.size,
+            problemCount = expenses.count { it.syncState == ExpenseSyncState.CONFLICT.name || it.syncState == ExpenseSyncState.SYNC_ERROR.name },
+            refreshError = failure?.takeIf { it.first > (meta?.lastFullSyncAt ?: 0L) }?.second
+        )
+    }
 
     fun getCachedExpenses(vehicleId: Int): List<Expense>? = cache.getExpenses(vehicleId)
 
@@ -45,25 +132,10 @@ class ExpenseRepository(
         cache.invalidate(vehicleId)
     }
 
-    suspend fun clearAllCaches() {
+    suspend fun clearAllCaches() = withContext(Dispatchers.IO) {
         cache.clearAll()
+        refreshErrors.value = emptyMap()
         database.clearAllTables()
-    }
-
-    suspend fun preloadVehicleData(serverUrl: String, apiKey: String, vehicleId: Int) {
-        if (cache.getExpenses(vehicleId) != null && cache.getFuelStatistics(vehicleId) != null) {
-            return
-        }
-        if (!cache.tryBeginPreload(vehicleId)) {
-            return
-        }
-
-        try {
-            getExpenses(serverUrl, apiKey, vehicleId)
-            getFuelStatistics(serverUrl, apiKey, vehicleId)
-        } finally {
-            cache.endPreload(vehicleId)
-        }
     }
 
     suspend fun getExpenses(
@@ -73,12 +145,18 @@ class ExpenseRepository(
         forceRefresh: Boolean = false
     ): ApiResult<List<Expense>> {
         val localExpenses = readLocalExpenses(serverUrl, vehicleId)
-        if (!forceRefresh && localExpenses.isNotEmpty()) {
+        if (!forceRefresh && (localExpenses.isNotEmpty() || database.syncMetaDao().getMeta(serverUrl, vehicleId) != null)) {
             cache.putExpenses(vehicleId, localExpenses)
             return ApiResult.Success(localExpenses)
         }
 
-        val syncResult = syncEngine.syncServer(serverUrl, apiKey)
+        val syncResult = sessionRefreshes[serverUrl]?.await() ?: syncEngine.syncServer(serverUrl, apiKey)
+        refreshErrors.update { errors ->
+            when (syncResult) {
+                is ApiResult.Success -> errors - vehicleId
+                is ApiResult.Error -> errors + (vehicleId to (System.currentTimeMillis() to syncResult.message))
+            }
+        }
         val refreshedLocalExpenses = readLocalExpenses(serverUrl, vehicleId)
 
         return when (syncResult) {

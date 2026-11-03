@@ -10,6 +10,9 @@ import com.lesicnik.wrench.data.local.entity.PendingSyncOpEntity
 @Dao
 interface PendingSyncOpDao {
 
+    @Query("SELECT * FROM pending_sync_ops WHERE serverUrl = :serverUrl AND vehicleRemoteId = :vehicleRemoteId")
+    fun observePending(serverUrl: String, vehicleRemoteId: Int): kotlinx.coroutines.flow.Flow<List<PendingSyncOpEntity>>
+
     @Query(
         """
         SELECT * FROM pending_sync_ops

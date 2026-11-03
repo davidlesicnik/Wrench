@@ -18,14 +18,12 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.ui.statistics.ExpenseBreakdownItem
 import com.lesicnik.wrench.ui.utils.color
-import java.text.NumberFormat
 import java.util.Locale
 
 @Composable
@@ -33,7 +31,7 @@ fun ExpenseBreakdownChart(
     breakdown: List<ExpenseBreakdownItem>,
     modifier: Modifier = Modifier
 ) {
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Card(
         modifier = modifier.fillMaxWidth(),

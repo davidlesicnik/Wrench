@@ -4,10 +4,13 @@ import android.net.Uri
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -16,6 +19,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.lesicnik.wrench.data.preload.SessionPreloader
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
@@ -96,10 +100,12 @@ fun WrenchNavGraph(
     navController: NavHostController,
     credentialsRepository: CredentialsRepository,
     vehicleRepository: VehicleRepository,
-    expenseRepository: ExpenseRepository
+    expenseRepository: ExpenseRepository,
+    sessionPreloader: SessionPreloader
 ) {
     NavHost(
         navController = navController,
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         startDestination = Screen.Login.route
     ) {
         composable(Screen.Login.route) {
@@ -109,6 +115,8 @@ fun WrenchNavGraph(
             LoginScreen(
                 viewModel = viewModel,
                 onLoginSuccess = {
+                    val session = viewModel.uiState.value
+                    sessionPreloader.start(session.serverUrl, session.apiKey, session.vehicles)
                     navController.navigate(Screen.Vehicles.route) {
                         popUpTo(Screen.Login.route) { inclusive = true }
                     }
@@ -124,7 +132,7 @@ fun WrenchNavGraph(
             popExitTransition = { ExitTransition.None }
         ) {
             val viewModel: VehiclesViewModel = viewModel(
-                factory = VehiclesViewModel.Factory(credentialsRepository, vehicleRepository, expenseRepository)
+                factory = VehiclesViewModel.Factory(credentialsRepository, vehicleRepository, expenseRepository, sessionPreloader)
             )
             VehiclesScreen(
                 viewModel = viewModel,
@@ -144,8 +152,8 @@ fun WrenchNavGraph(
             arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
-                // Keep screen visible while add expense screen slides in on top
-                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+                if (targetState.destination.route == Screen.Vehicles.route) ExitTransition.None
+                else fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
             },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
@@ -165,6 +173,7 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
+                animateEntry = navController.previousBackStackEntry?.destination?.route == Screen.Vehicles.route,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToExpenses = {
                     navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
@@ -183,8 +192,9 @@ fun WrenchNavGraph(
             arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
-                // Keep screen visible while edit screen slides in on top
-                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+                if (targetState.destination.route == Screen.Vehicles.route)
+                    ExitTransition.None
+                else fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
             },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
@@ -302,7 +312,9 @@ fun WrenchNavGraph(
             arguments = vehicleNavArguments(),
             enterTransition = { EnterTransition.None },
             exitTransition = {
-                fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
+                if (targetState.destination.route == Screen.Vehicles.route)
+                    ExitTransition.None
+                else fadeOut(animationSpec = tween(200), targetAlpha = 0.99f)
             },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None }
