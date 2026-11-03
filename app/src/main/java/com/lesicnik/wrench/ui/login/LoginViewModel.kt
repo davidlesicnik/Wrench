@@ -3,6 +3,7 @@ package com.lesicnik.wrench.ui.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
@@ -19,6 +20,7 @@ data class LoginUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false,
+    val vehicles: List<Vehicle> = emptyList(),
     val isCheckingStoredCredentials: Boolean = true,
     val showHttpWarning: Boolean = false,
     val pendingHttpLogin: Boolean = false,
@@ -99,7 +101,8 @@ class LoginViewModel(
                 offlinePromptMessage = null,
                 isLoading = false,
                 errorMessage = null,
-                isLoggedIn = true
+                isLoggedIn = true,
+                vehicles = vehicleRepository.getCachedVehicles(state.serverUrl)
             )
         }
     }
@@ -151,7 +154,8 @@ class LoginViewModel(
                     }
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        isLoggedIn = true
+                        isLoggedIn = true,
+                        vehicles = result.data
                     )
                 }
                 is ApiResult.Error -> {

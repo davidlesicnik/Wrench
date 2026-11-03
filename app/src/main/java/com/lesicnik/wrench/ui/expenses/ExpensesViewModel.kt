@@ -12,18 +12,26 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import com.lesicnik.wrench.data.repository.ExpenseSyncSummary
 
 data class ExpensesUiState(
     val expenses: List<Expense> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+    val searchQuery: String = "",
+    val dateFrom: LocalDate? = null,
+    val dateTo: LocalDate? = null,
+    val syncSummary: ExpenseSyncSummary = ExpenseSyncSummary(),
     val selectedFilters: Set<ExpenseType> = ExpenseType.entries.toSet()
 ) {
     val filteredExpenses: List<Expense>
-        get() = if (selectedFilters.size == ExpenseType.entries.size) {
-            expenses
-        } else {
-            expenses.filter { it.type in selectedFilters }
+        get() = expenses.filter { expense ->
+            expense.type in selectedFilters &&
+                (dateFrom == null || !expense.date.isBefore(dateFrom)) &&
+                (dateTo == null || !expense.date.isAfter(dateTo)) &&
+                (searchQuery.isBlank() || listOf(expense.description, expense.notes.orEmpty(), expense.type.name)
+                    .any { it.contains(searchQuery.trim(), ignoreCase = true) })
         }
 }
 
@@ -37,6 +45,19 @@ class ExpensesViewModel(
     val uiState: StateFlow<ExpensesUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            val credentials = credentialsRepository.getCredentials() ?: return@launch
+            launch {
+                expenseRepository.observeExpenses(credentials.serverUrl, vehicleId).collect { expenses ->
+                    _uiState.value = _uiState.value.copy(expenses = expenses)
+                }
+            }
+            launch {
+                expenseRepository.observeSyncSummary(credentials.serverUrl, vehicleId).collect { summary ->
+                    _uiState.value = _uiState.value.copy(syncSummary = summary)
+                }
+            }
+        }
         loadExpenses()
     }
 
@@ -73,6 +94,19 @@ class ExpensesViewModel(
                 }
             }
         }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+    }
+
+    fun setDateRange(from: LocalDate?, to: LocalDate?) {
+        _uiState.value = _uiState.value.copy(dateFrom = from, dateTo = to)
+    }
+
+    fun resetFilters() {
+        _uiState.value = _uiState.value.copy(searchQuery = "", dateFrom = null, dateTo = null,
+            selectedFilters = ExpenseType.entries.toSet())
     }
 
     fun clearError() {

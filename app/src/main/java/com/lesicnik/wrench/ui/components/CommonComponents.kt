@@ -22,7 +22,9 @@ fun EmptyContent(
     icon: ImageVector,
     title: String,
     message: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
 ) {
     Column(
         modifier = modifier,
@@ -51,6 +53,11 @@ fun EmptyContent(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (actionLabel != null && onAction != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            androidx.compose.material3.Button(onClick = onAction) { Text(actionLabel) }
+        }
+
     }
 }
 

@@ -1,11 +1,14 @@
 package com.lesicnik.wrench.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +28,6 @@ import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -101,6 +103,7 @@ fun BottomBarWithFab(
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .height(BottomBarHeight)
             .graphicsLayer { clip = false }
     ) {
@@ -114,7 +117,7 @@ fun BottomBarWithFab(
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BottomBarIcon(
@@ -131,7 +134,7 @@ fun BottomBarWithFab(
                     onClick = { onTabSelected(BottomTab.EXPENSES) }
                 )
 
-                Spacer(modifier = Modifier.width(FabRadius * 2 + 24.dp))
+                Spacer(modifier = Modifier.width(FabRadius * 2 + 8.dp))
 
                 BottomBarIcon(
                     icon = Icons.Default.BarChart,
@@ -182,26 +185,22 @@ private fun BottomBarIcon(
         MaterialTheme.colorScheme.onSurfaceVariant
     }
 
-    Box(
+    Column(
         modifier = Modifier
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-            .padding(4.dp)
-            .background(
-                color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                shape = CircleShape
-            )
-            .padding(12.dp),
-        contentAlignment = Alignment.Center
+            .width(64.dp)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = color,
-            modifier = Modifier.size(24.dp)
-        )
+        Box(
+            modifier = Modifier.background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                CircleShape
+            ).padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(24.dp))
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
     }
 }

@@ -32,6 +32,9 @@ class StatisticsViewModel(
     val uiState: StateFlow<StatisticsUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            expenseRepository.sessionDataReady.collect { loadStatistics() }
+        }
         loadStatistics()
     }
 

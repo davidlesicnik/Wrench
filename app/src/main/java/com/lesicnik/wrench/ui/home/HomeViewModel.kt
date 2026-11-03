@@ -31,6 +31,9 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            expenseRepository.sessionDataReady.collect { loadStatistics() }
+        }
         loadStatistics()
     }
 

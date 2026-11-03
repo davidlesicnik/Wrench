@@ -15,7 +15,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,7 +32,7 @@ fun StatsPage(
     odometerUnit: String,
     modifier: Modifier = Modifier
 ) {
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Column(
         modifier = modifier
@@ -96,7 +95,7 @@ fun StatsPage(
                 StatCard(
                     label = "Fuel Economy",
                     value = statistics.averageFuelConsumption?.let {
-                        String.format(Locale.getDefault(), "%.1f L/100", it)
+                        String.format(Locale.getDefault(), "%.1f L/100km", it)
                     } ?: "--",
                     modifier = Modifier.weight(1f)
                 )

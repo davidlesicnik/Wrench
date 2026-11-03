@@ -35,7 +35,7 @@ class OfflineSyncEngine(
         private val syncMutex = Mutex()
     }
 
-    suspend fun syncServer(serverUrl: String, apiKey: String): ApiResult<Unit> {
+    suspend fun syncServer(serverUrl: String, apiKey: String, preferredVehicleIds: List<Int> = emptyList()): ApiResult<Unit> {
         return syncMutex.withLock {
             val vehicleIds = mutableSetOf<Int>()
 
@@ -56,7 +56,8 @@ class OfflineSyncEngine(
             val pendingOps = database.pendingSyncOpDao().getPendingOperations(serverUrl)
             vehicleIds += pendingOps.map { it.vehicleRemoteId }
 
-            for (vehicleId in vehicleIds) {
+            val priority = preferredVehicleIds.withIndex().associate { it.value to it.index }
+            for (vehicleId in vehicleIds.sortedBy { priority[it] ?: Int.MAX_VALUE }) {
                 val vehicleSyncResult = syncVehicle(serverUrl, apiKey, vehicleId)
                 if (vehicleSyncResult is ApiResult.Error) {
                     return@withLock vehicleSyncResult

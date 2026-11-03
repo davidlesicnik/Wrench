@@ -2,13 +2,9 @@ package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +15,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -70,21 +69,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import java.text.DecimalFormatSymbols
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.color
@@ -92,10 +86,7 @@ import com.lesicnik.wrench.ui.utils.getStyle
 import com.lesicnik.wrench.ui.utils.rememberKeyboardVisibility
 import java.text.NumberFormat
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,6 +101,7 @@ fun AddEditExpenseScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
+    val currencyCode = com.lesicnik.wrench.ui.settings.LocalAppPreferences.current.currencyCode
     var showDatePicker by remember { mutableStateOf(false) }
     val isKeyboardOpen by rememberKeyboardVisibility()
     val nextFieldKeyboardActions = KeyboardActions(
@@ -147,7 +139,7 @@ fun AddEditExpenseScreen(
 
     // Handle back button with discard dialog
     BackHandler {
-        if (uiState.isEditMode && uiState.isDirty) {
+        if (uiState.isDirty) {
             viewModel.showDiscardDialog()
         } else {
             onNavigateBack()
@@ -183,7 +175,7 @@ fun AddEditExpenseScreen(
                 title = { Text(if (uiState.isEditMode) "Edit Expense" else "Add Expense") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (uiState.isEditMode && uiState.isDirty) {
+                        if (uiState.isDirty) {
                             viewModel.showDiscardDialog()
                         } else {
                             onNavigateBack()
@@ -268,11 +260,12 @@ fun AddEditExpenseScreen(
                             value = uiState.odometer,
                             onValueChange = viewModel::onOdometerChanged,
                             label = { Text("Odometer ($odometerUnit)") },
-                            placeholder = if (!uiState.isEditMode) {
-                                lastOdometer?.let {
-                                    { Text("Last: ${NumberFormat.getNumberInstance().format(it)}") }
-                                }
-                            } else null,
+                            isError = uiState.fieldErrors["odometer"] != null,
+                            supportingText = {
+                                Text(uiState.fieldErrors["odometer"] ?: lastOdometer?.let {
+                                    "Previous reading: ${NumberFormat.getNumberInstance().format(it)} $odometerUnit"
+                                } ?: "Odometer reading at the time of this expense")
+                            },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Speed,
@@ -293,12 +286,7 @@ fun AddEditExpenseScreen(
                     // Fuel-specific fields
                     AnimatedVisibility(visible = uiState.expenseType == ExpenseType.FUEL) {
                         Column {
-                            // Fuel - POS style (type digits, auto-formats with decimal)
-                            val fuelTransformation = remember {
-                                FuelPosTransformation(
-                                    DecimalFormatSymbols.getInstance().decimalSeparator
-                                )
-                            }
+                            // Fuel amount with decimal keyboard input
                             OutlinedTextField(
                                 value = uiState.fuelConsumed,
                                 onValueChange = viewModel::onFuelConsumedChanged,
@@ -309,9 +297,10 @@ fun AddEditExpenseScreen(
                                         contentDescription = null
                                     )
                                 },
-                                visualTransformation = fuelTransformation,
+                                isError = uiState.fieldErrors["fuel"] != null,
+                                supportingText = { Text(uiState.fieldErrors["fuel"] ?: "Litres, for example 52.13") },
                                 keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
+                                    keyboardType = KeyboardType.Decimal,
                                     imeAction = ImeAction.Next
                                 ),
                                 keyboardActions = nextFieldKeyboardActions,
@@ -360,7 +349,7 @@ fun AddEditExpenseScreen(
                                         enabled = !uiState.isLoading
                                     )
                                     Text(
-                                        text = "Missed last",
+                                        text = "Missed a fill-up",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
@@ -368,12 +357,21 @@ fun AddEditExpenseScreen(
                         }
                     }
 
+                    if (uiState.expenseType == ExpenseType.FUEL) {
+                        Text(
+                            "Fill to full: the tank was filled completely. Missed a fill-up: a previous stop was not recorded, so consumption cannot be calculated reliably.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                     // Description (not for FUEL)
                     AnimatedVisibility(visible = uiState.expenseType != ExpenseType.FUEL) {
                         OutlinedTextField(
                             value = uiState.description,
                             onValueChange = viewModel::onDescriptionChanged,
                             label = { Text("Description") },
+                            isError = uiState.fieldErrors["description"] != null,
+                            supportingText = { uiState.fieldErrors["description"]?.let { Text(it) } },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Description,
@@ -390,25 +388,21 @@ fun AddEditExpenseScreen(
                         )
                     }
 
-                    // Cost - POS style (type digits, auto-formats with decimal)
-                    val currencyTransformation = remember {
-                        CurrencyPosTransformation(
-                            DecimalFormatSymbols.getInstance().decimalSeparator
-                        )
-                    }
+                    // Cost with decimal keyboard input
                     OutlinedTextField(
                         value = uiState.cost,
                         onValueChange = viewModel::onCostChanged,
-                        label = { Text("Cost") },
+                        label = { Text("Cost ($currencyCode)") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Payments,
                                 contentDescription = null
                             )
                         },
-                        visualTransformation = currencyTransformation,
+                        isError = uiState.fieldErrors["cost"] != null,
+                        supportingText = { Text(uiState.fieldErrors["cost"] ?: "Total paid, for example 84.82") },
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = KeyboardType.Decimal,
                             imeAction = ImeAction.Next
                         ),
                         keyboardActions = nextFieldKeyboardActions,
@@ -454,7 +448,6 @@ fun AddEditExpenseScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                viewModel.saveExpense()
                             }
                         ),
                         minLines = 2,
@@ -473,39 +466,57 @@ fun AddEditExpenseScreen(
                     .padding(if (isCompactScreen) 8.dp else 16.dp),
                 verticalArrangement = Arrangement.spacedBy(if (isCompactScreen) 8.dp else 16.dp)
             ) {
-                // Expense Type Selector (hidden when keyboard is open or in edit mode)
-                AnimatedVisibility(
-                    visible = !isKeyboardOpen && !uiState.isEditMode,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                if (!uiState.isEditMode) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                            .padding(6.dp)
+                            .selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Text(
-                                text = "Expense Type",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        expenseTypeOrder.forEach { type ->
+                            val selected = uiState.expenseType == type
+                            val style = type.getStyle()
+                            val tileColor by animateColorAsState(
+                                targetValue = if (selected) style.color.copy(alpha = 0.14f) else Color.Transparent,
+                                animationSpec = tween(180),
+                                label = "typeBackground"
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                expenseTypeOrder.forEach { type ->
-                                    ExpenseTypeChip(
-                                        type = type,
-                                        selected = uiState.expenseType == type,
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(tileColor)
+                                    .border(1.dp, if (selected) style.color.copy(alpha = 0.35f) else Color.Transparent, RoundedCornerShape(18.dp))
+                                    .selectable(
+                                        selected = selected,
+                                        enabled = !uiState.isLoading,
+                                        role = Role.RadioButton,
                                         onClick = {
                                             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                             viewModel.onExpenseTypeChanged(type)
                                         }
                                     )
+                                    .heightIn(min = 72.dp)
+                                    .padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(32.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(style.icon, contentDescription = null,
+                                        tint = if (selected) style.color else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp))
                                 }
+                                Text(style.label, style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -533,9 +544,9 @@ fun AddEditExpenseScreen(
                     }
                     Text(
                         text = when {
-                            uiState.isLoading -> if (uiState.isEditMode) "Updating..." else "Saving..."
-                            uiState.isEditMode -> "Update"
-                            else -> "Save Expense"
+                            uiState.isLoading -> if (uiState.isEditMode) "Updating…" else "Saving…"
+                            uiState.isEditMode -> "Update ${uiState.expenseType.getStyle().label} Expense"
+                            else -> "Save ${uiState.expenseType.getStyle().label} Expense"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White
@@ -550,7 +561,7 @@ fun AddEditExpenseScreen(
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = uiState.date
-                .atStartOfDay(ZoneId.systemDefault())
+                .atStartOfDay(java.time.ZoneOffset.UTC)
                 .toInstant()
                 .toEpochMilli()
         )
@@ -562,7 +573,7 @@ fun AddEditExpenseScreen(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
                             val selectedDate = Instant.ofEpochMilli(millis)
-                                .atZone(ZoneId.systemDefault())
+                                .atZone(java.time.ZoneOffset.UTC)
                                 .toLocalDate()
                             viewModel.onDateChanged(selectedDate)
                         }
@@ -662,7 +673,7 @@ fun AddEditExpenseScreen(
     if (uiState.showDeleteDialog) {
         val expense = uiState.originalExpense
         val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-        val currencyFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+        val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
         AlertDialog(
             onDismissRequest = { if (!uiState.isDeleting) viewModel.dismissDeleteDialog() },
@@ -716,152 +727,6 @@ fun AddEditExpenseScreen(
                     enabled = !uiState.isDeleting
                 ) {
                     Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun ExpenseTypeChip(
-    type: ExpenseType,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val style = type.getStyle()
-    val icon = style.icon
-    val color = style.color
-    val label = style.label
-
-    // Animated scale for selection
-    val scale by animateFloatAsState(
-        targetValue = if (selected) 1.1f else 1f,
-        animationSpec = tween(durationMillis = 200),
-        label = "chipScale"
-    )
-
-    // Animated background color
-    val backgroundColor by animateColorAsState(
-        targetValue = if (selected) color else color.copy(alpha = 0.15f),
-        animationSpec = tween(durationMillis = 200),
-        label = "chipBgColor"
-    )
-
-    // Animated icon tint
-    val iconTint by animateColorAsState(
-        targetValue = if (selected) Color.White else color,
-        animationSpec = tween(durationMillis = 200),
-        label = "chipIconTint"
-    )
-
-    // Animated label color
-    val labelColor by animateColorAsState(
-        targetValue = if (selected) color else Color.Gray,
-        animationSpec = tween(durationMillis = 200),
-        label = "chipLabelColor"
-    )
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(8.dp)
-            .scale(scale)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .background(
-                    color = backgroundColor,
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = labelColor
-        )
-    }
-}
-
-/**
- * POS-style visual transformation: displays raw digits as formatted currency
- * e.g., "4555" displays as "45,55" (or "45.55" depending on locale)
- */
-private class CurrencyPosTransformation(
-    private val decimalSeparator: Char
-) : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val digits = text.text
-
-        if (digits.isEmpty()) {
-            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
-        }
-
-        // Pad to at least 3 digits for proper formatting
-        val padded = digits.padStart(3, '0')
-        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
-        val decPart = padded.takeLast(2)
-        val formatted = "$intPart$decimalSeparator$decPart"
-
-        return TransformedText(
-            AnnotatedString(formatted),
-            object : OffsetMapping {
-                override fun originalToTransformed(offset: Int): Int {
-                    // Map cursor position from raw digits to formatted string
-                    return formatted.length
-                }
-
-                override fun transformedToOriginal(offset: Int): Int {
-                    // Map cursor position from formatted string to raw digits
-                    return digits.length
-                }
-            }
-        )
-    }
-}
-
-/**
- * POS-style visual transformation: displays raw digits as formatted fuel liters
- * e.g., "3198" displays as "31,98" (or "31.98" depending on locale)
- */
-private class FuelPosTransformation(
-    private val decimalSeparator: Char
-) : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val digits = text.text
-
-        if (digits.isEmpty()) {
-            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
-        }
-
-        // Pad to at least 3 digits for proper formatting
-        val padded = digits.padStart(3, '0')
-        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
-        val decPart = padded.takeLast(2)
-        val formatted = "$intPart$decimalSeparator$decPart"
-
-        return TransformedText(
-            AnnotatedString(formatted),
-            object : OffsetMapping {
-                override fun originalToTransformed(offset: Int): Int {
-                    // Map cursor position from raw digits to formatted string
-                    return formatted.length
-                }
-
-                override fun transformedToOriginal(offset: Int): Int {
-                    // Map cursor position from formatted string to raw digits
-                    return digits.length
                 }
             }
         )

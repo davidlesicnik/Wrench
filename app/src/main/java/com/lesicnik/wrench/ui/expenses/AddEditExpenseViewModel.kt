@@ -16,6 +16,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 data class AddEditExpenseUiState(
+    val initialDate: LocalDate = LocalDate.now(),
+    val fieldErrors: Map<String, String> = emptyMap(),
     val expenseType: ExpenseType = ExpenseType.FUEL,
     val date: LocalDate = LocalDate.now(),
     val odometer: String = "",
@@ -42,16 +44,17 @@ data class AddEditExpenseUiState(
 ) {
     val isDirty: Boolean
         get() {
-            val original = originalExpense ?: return false
-            val originalCostDigits = ((original.cost * 100).toLong()).toString()
-            val originalFuelDigits = original.liters?.let { ((it * 100).toLong()).toString() } ?: ""
+            val original = originalExpense ?: return expenseType != ExpenseType.FUEL ||
+                date != initialDate || odometer.isNotBlank() || description.isNotBlank() ||
+                cost.isNotBlank() || notes.isNotBlank() || fuelConsumed.isNotBlank() ||
+                !isFillToFull || isMissedFuelUp || isRecurring
             return expenseType != original.type ||
                     date != original.date ||
                     odometer != (original.odometer?.toString() ?: "") ||
                     description != original.description ||
-                    cost != originalCostDigits ||
+                    parseDecimalInput(cost)?.toDouble() != original.cost ||
                     notes != (original.notes ?: "") ||
-                    fuelConsumed != originalFuelDigits ||
+                    parseDecimalInput(fuelConsumed, 3)?.toDouble() != original.liters ||
                     isFillToFull != (original.isFillToFull ?: true) ||
                     isMissedFuelUp != (original.isMissedFuelUp ?: false) ||
                     isRecurring != (original.isRecurring ?: false)
@@ -70,8 +73,8 @@ class AddEditExpenseViewModel(
     fun initializeForEdit(expenseId: Int, expenseType: ExpenseType) {
         val expense = expenseRepository.getExpenseById(vehicleId, expenseId, expenseType)
         if (expense != null) {
-            val costDigits = ((expense.cost * 100).toLong()).toString()
-            val fuelDigits = expense.liters?.let { ((it * 100).toLong()).toString() } ?: ""
+            val costDigits = decimalInputValue(expense.cost)
+            val fuelDigits = expense.liters?.let { decimalInputValue(it) } ?: ""
             _uiState.value = AddEditExpenseUiState(
                 expenseType = expense.type,
                 date = expense.date,
@@ -92,7 +95,7 @@ class AddEditExpenseViewModel(
     }
 
     fun onExpenseTypeChanged(type: ExpenseType) {
-        _uiState.value = _uiState.value.copy(expenseType = type)
+        _uiState.value = _uiState.value.copy(expenseType = type, fieldErrors = emptyMap())
     }
 
     fun onDateChanged(date: LocalDate) {
@@ -100,48 +103,28 @@ class AddEditExpenseViewModel(
     }
 
     fun onOdometerChanged(odometer: String) {
-        _uiState.value = _uiState.value.copy(odometer = odometer.filter { it.isDigit() })
+        _uiState.value = _uiState.value.copy(odometer = odometer.filter { it.isDigit() }.take(10), fieldErrors = _uiState.value.fieldErrors - "odometer")
     }
 
     fun onDescriptionChanged(description: String) {
-        _uiState.value = _uiState.value.copy(description = description)
+        _uiState.value = _uiState.value.copy(description = description, fieldErrors = _uiState.value.fieldErrors - "description")
     }
 
     fun onCostChanged(cost: String) {
-        val digits = cost.filter { it.isDigit() }
-        val limited = if (digits.length > 10) digits.takeLast(10) else digits
-        val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
-        _uiState.value = _uiState.value.copy(cost = trimmed)
+        _uiState.value = _uiState.value.copy(cost = cost.take(24), fieldErrors = _uiState.value.fieldErrors - "cost")
     }
 
-    fun getCostAsDecimal(): Double? {
-        val digits = _uiState.value.cost
-        if (digits.isEmpty()) return null
-        val padded = digits.padStart(3, '0')
-        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
-        val decPart = padded.takeLast(2)
-        return "$intPart.$decPart".toDoubleOrNull()
-    }
+    fun getCostAsDecimal(): Double? = parseDecimalInput(_uiState.value.cost)?.toDouble()
 
     fun onNotesChanged(notes: String) {
         _uiState.value = _uiState.value.copy(notes = notes)
     }
 
     fun onFuelConsumedChanged(fuelConsumed: String) {
-        val digits = fuelConsumed.filter { it.isDigit() }
-        val limited = if (digits.length > 6) digits.takeLast(6) else digits
-        val trimmed = limited.trimStart('0').ifEmpty { if (limited.isNotEmpty()) "0" else "" }
-        _uiState.value = _uiState.value.copy(fuelConsumed = trimmed)
+        _uiState.value = _uiState.value.copy(fuelConsumed = fuelConsumed.take(24), fieldErrors = _uiState.value.fieldErrors - "fuel")
     }
 
-    fun getFuelConsumedAsDecimal(): Double? {
-        val digits = _uiState.value.fuelConsumed
-        if (digits.isEmpty()) return null
-        val padded = digits.padStart(3, '0')
-        val intPart = padded.dropLast(2).trimStart('0').ifEmpty { "0" }
-        val decPart = padded.takeLast(2)
-        return "$intPart.$decPart".toDoubleOrNull()
-    }
+    fun getFuelConsumedAsDecimal(): Double? = parseDecimalInput(_uiState.value.fuelConsumed, 3)?.toDouble()
 
     fun onFillToFullChanged(isFillToFull: Boolean) {
         _uiState.value = _uiState.value.copy(isFillToFull = isFillToFull)
@@ -305,23 +288,22 @@ class AddEditExpenseViewModel(
     fun saveExpense() {
         val state = _uiState.value
 
+        if (state.isLoading || state.isDeleting || state.isResolvingConflict) return
         val cost = getCostAsDecimal()
-        if (cost == null || cost <= 0) {
-            _uiState.value = state.copy(errorMessage = "Please enter a valid cost")
-            return
-        }
-
+        val errors = mutableMapOf<String, String>()
+        if (cost == null || cost <= 0 || !cost.isFinite()) errors["cost"] = "Enter a cost greater than zero (for example 84.82)"
         if (state.expenseType != ExpenseType.FUEL && state.description.isBlank()) {
-            _uiState.value = state.copy(errorMessage = "Please enter a description")
-            return
+            errors["description"] = "Enter a description"
         }
-
-        if (state.expenseType == ExpenseType.FUEL) {
-            val fuelConsumed = getFuelConsumedAsDecimal()
-            if (fuelConsumed == null || fuelConsumed <= 0) {
-                _uiState.value = state.copy(errorMessage = "Please enter fuel amount")
-                return
-            }
+        if (state.expenseType == ExpenseType.FUEL && (getFuelConsumedAsDecimal() ?: 0.0) <= 0) {
+            errors["fuel"] = "Enter a fuel amount greater than zero (for example 52.13)"
+        }
+        if (state.expenseType != ExpenseType.TAX && state.odometer.isNotBlank() && state.odometer.toIntOrNull() == null) {
+            errors["odometer"] = "Enter a valid odometer reading"
+        }
+        if (errors.isNotEmpty()) {
+            _uiState.value = state.copy(fieldErrors = errors)
+            return
         }
 
         viewModelScope.launch {
@@ -347,7 +329,7 @@ class AddEditExpenseViewModel(
                     date = state.date,
                     odometer = state.odometer.toIntOrNull(),
                     description = if (state.expenseType == ExpenseType.FUEL) "Fuel" else state.description,
-                    cost = cost,
+                    cost = cost!!,
                     notes = state.notes,
                     fuelConsumed = getFuelConsumedAsDecimal(),
                     isFillToFull = state.isFillToFull,
@@ -363,7 +345,7 @@ class AddEditExpenseViewModel(
                     date = state.date,
                     odometer = state.odometer.toIntOrNull(),
                     description = if (state.expenseType == ExpenseType.FUEL) "Fuel" else state.description,
-                    cost = cost,
+                    cost = cost!!,
                     notes = state.notes,
                     fuelConsumed = getFuelConsumedAsDecimal(),
                     isFillToFull = state.isFillToFull,

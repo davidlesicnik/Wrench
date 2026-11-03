@@ -2,6 +2,9 @@ package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -14,11 +17,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +31,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
@@ -96,10 +104,12 @@ fun ExpensesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var selectedExpense by remember { mutableStateOf<Expense?>(null) }
+    var showDateRange by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    val hasActiveFilters = uiState.selectedFilters.size < ExpenseType.entries.size
+    val hasActiveFilters = uiState.selectedFilters.size < ExpenseType.entries.size || uiState.dateFrom != null || uiState.dateTo != null || uiState.searchQuery.isNotBlank()
 
     // Handle system back button to go directly to vehicle list
     BackHandler {
@@ -146,7 +156,9 @@ fun ExpensesScreen(
                                         containerColor = MaterialTheme.colorScheme.error
                                     ) {
                                         Text(
-                                            text = uiState.selectedFilters.size.toString(),
+                                            text = ((if (uiState.selectedFilters.size < ExpenseType.entries.size) 1 else 0) +
+                                                (if (uiState.searchQuery.isNotBlank()) 1 else 0) +
+                                                (if (uiState.dateFrom != null || uiState.dateTo != null) 1 else 0)).toString(),
                                             style = MaterialTheme.typography.labelSmall
                                         )
                                     }
@@ -175,10 +187,11 @@ fun ExpensesScreen(
                 .fillMaxSize()
                 .padding(top = paddingValues.calculateTopPadding())
         ) {
+            Column(Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = BottomBarHeight)) {
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading && uiState.expenses.isNotEmpty(),
                 onRefresh = { viewModel.loadExpenses(forceRefresh = true) },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxWidth().weight(1f)
             ) {
                 when {
                     uiState.isLoading && uiState.expenses.isEmpty() -> {
@@ -203,7 +216,9 @@ fun ExpensesScreen(
                         EmptyContent(
                             icon = Icons.Default.Receipt,
                             title = "No expenses found",
-                            message = "Add records in LubeLogger to see them here",
+                            message = "Track a fill-up, service or another vehicle expense",
+                            actionLabel = "Add first expense",
+                            onAction = { onAddExpense(null) },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -234,7 +249,7 @@ fun ExpensesScreen(
                             modifier = Modifier.fillMaxSize(),
                             state = listState,
                             contentPadding = PaddingValues(
-                                bottom = BottomBarHeight + 16.dp
+                                bottom = 16.dp
                             ),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
@@ -248,14 +263,14 @@ fun ExpensesScreen(
                                         // At the absolute top of the list we don't need the "sticky" shadow.
                                         (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset > 0)
 
-                                    MonthDivider(month = month, isSticky = isSticky)
+                                    MonthDivider(month = month, isSticky = isSticky, total = expensesByMonth[month].orEmpty().sumOf { it.cost })
                                 }
                                 items(expensesByMonth[month].orEmpty(), key = { "${it.type}_${it.id}" }) { expense ->
                                     ExpenseCard(
                                         expense = expense,
                                         modifier = Modifier.padding(horizontal = 16.dp),
                                         odometerUnit = odometerUnit,
-                                        onClick = { onEditExpense(expense) }
+                                        onClick = { selectedExpense = expense }
                                     )
                                 }
                             }
@@ -264,8 +279,10 @@ fun ExpensesScreen(
                 }
             }
 
+            } // Expense list
+
             // Bottom bar overlaid on top of content
-            val lastOdometer = uiState.expenses.firstNotNullOfOrNull { it.odometer }
+            val lastOdometer = uiState.expenses.maxByOrNull { it.date }?.odometer
             BottomBarWithFab(
                 selectedTab = BottomTab.EXPENSES,
                 onTabSelected = { tab ->
@@ -281,6 +298,62 @@ fun ExpensesScreen(
         }
     }
 
+    selectedExpense?.let { selected ->
+        val expense = uiState.expenses.find { it.id == selected.id && it.type == selected.type }
+        if (expense != null) ExpenseDetailSheet(
+            expense = expense,
+            odometerUnit = odometerUnit,
+            onDismiss = { selectedExpense = null },
+            onEdit = { selectedExpense = null; onEditExpense(expense) }
+        )
+    }
+    if (showDateRange) {
+        val dateState = rememberDateRangePickerState(
+            initialSelectedStartDateMillis = uiState.dateFrom?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli(),
+            initialSelectedEndDateMillis = uiState.dateTo?.atStartOfDay(java.time.ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDateRange = false },
+            confirmButton = {
+                TextButton(enabled = dateState.selectedStartDateMillis != null && dateState.selectedEndDateMillis != null,
+                    onClick = {
+                        fun date(millis: Long?) = millis?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate() }
+                        viewModel.setDateRange(date(dateState.selectedStartDateMillis), date(dateState.selectedEndDateMillis))
+                        showDateRange = false
+                    }) { Text("Apply") }
+            },
+            dismissButton = { TextButton(onClick = { showDateRange = false }) { Text("Cancel") } }
+        ) {
+            DateRangePicker(
+                state = dateState,
+                modifier = Modifier.height(500.dp),
+                title = {
+                    Text(
+                        text = "Select dates",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 12.dp)
+                    )
+                },
+                headline = {
+                    val formatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+                    fun label(millis: Long?, placeholder: String) = millis?.let {
+                        java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC)
+                            .toLocalDate().format(formatter)
+                    } ?: placeholder
+                    Text(
+                        text = if (dateState.selectedStartDateMillis == null && dateState.selectedEndDateMillis == null) {
+                            "Choose a date range"
+                        } else {
+                            "${label(dateState.selectedStartDateMillis, "Start date")} – ${label(dateState.selectedEndDateMillis, "End date")}"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(start = 24.dp, end = 12.dp, bottom = 20.dp)
+                    )
+                }
+            )
+        }
+    }
+
     if (showFilterSheet) {
         FilterBottomSheet(
             sheetState = sheetState,
@@ -291,10 +364,47 @@ fun ExpensesScreen(
                     }
                 }
             },
+            hasActiveFilters = hasActiveFilters,
+            onReset = viewModel::resetFilters,
             selectedFilters = uiState.selectedFilters,
             onToggleFilter = { viewModel.toggleFilter(it) },
             onSelectAll = { viewModel.selectAllFilters() },
-            onClearAll = { viewModel.clearAllFilters() }
+            onClearAll = { viewModel.clearAllFilters() },
+            filterControls = {
+                ExpenseFilterFields(
+                    query = uiState.searchQuery,
+                    onQueryChanged = viewModel::setSearchQuery,
+                    dateFrom = uiState.dateFrom,
+                    dateTo = uiState.dateTo,
+                    onDateClick = { showDateRange = true },
+                    onClearDates = { viewModel.setDateRange(null, null) }
+                )
+            },
+            syncDetails = {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val summary = uiState.syncSummary
+                    val lastSync = summary.lastSyncedAt?.let {
+                        java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())
+                            .format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
+                    } ?: "Never"
+                    Text(
+                        text = buildString {
+                            append(if (uiState.isLoading) "Refreshing…" else if (summary.refreshError != null) "Refresh failed · Cached data" else "Saved on device")
+                            append(" · Last synced: $lastSync")
+                            if (summary.pendingCount > 0) append(" · ${summary.pendingCount} pending")
+                            if (summary.problemCount > 0) append(" · ${summary.problemCount} need attention")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(enabled = !uiState.isLoading, onClick = { viewModel.loadExpenses(forceRefresh = true) }) {
+                        Text(if (summary.refreshError != null || summary.problemCount > 0) "Retry" else "Sync")
+                    }
+                }
+            }
         )
     }
 
@@ -308,7 +418,7 @@ private fun ExpenseCard(
     modifier: Modifier = Modifier
 ) {
     val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
@@ -497,9 +607,11 @@ private fun ExpenseIcon(type: ExpenseType) {
 private fun MonthDivider(
     month: YearMonth,
     isSticky: Boolean,
+    total: Double,
     modifier: Modifier = Modifier
 ) {
     val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy") }
+    val formatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -512,11 +624,11 @@ private fun MonthDivider(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Text(
-                text = month.format(monthFormatter),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(month.format(monthFormatter), style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f))
+                Text(formatter.format(total), style = MaterialTheme.typography.titleSmall)
+            }
             Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         }
@@ -563,10 +675,14 @@ private fun EmptyFilterContent(
 private fun FilterBottomSheet(
     sheetState: androidx.compose.material3.SheetState,
     onDismiss: () -> Unit,
+    hasActiveFilters: Boolean,
+    onReset: () -> Unit,
     selectedFilters: Set<ExpenseType>,
     onToggleFilter: (ExpenseType) -> Unit,
     onSelectAll: () -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    filterControls: @Composable () -> Unit,
+    syncDetails: @Composable () -> Unit
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -576,9 +692,19 @@ private fun FilterBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
+                .padding(bottom = 24.dp)
         ) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Search & filter", style = MaterialTheme.typography.headlineSmall)
+                TextButton(onClick = onReset, enabled = hasActiveFilters) { Text("Reset") }
+            }
+            filterControls()
+            Spacer(Modifier.height(20.dp))
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -586,8 +712,8 @@ private fun FilterBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Filter by type",
-                    style = MaterialTheme.typography.titleLarge
+                    text = "Expense types",
+                    style = MaterialTheme.typography.titleSmall
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onSelectAll) {
@@ -599,7 +725,7 @@ private fun FilterBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Filter chips
             Column(
@@ -664,6 +790,10 @@ private fun FilterBottomSheet(
                             .height(56.dp)
                     )
                 }
+            }
+            Spacer(Modifier.height(16.dp))
+            Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                syncDetails()
             }
         }
     }

@@ -1,5 +1,23 @@
 package com.lesicnik.wrench.ui.home
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,7 +27,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -22,7 +42,6 @@ import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -63,10 +83,21 @@ fun HomeScreen(
     onNavigateBack: () -> Unit,
     onNavigateToExpenses: () -> Unit,
     onNavigateToStatistics: () -> Unit,
-    onAddExpense: (lastOdometer: Int?) -> Unit
+    onAddExpense: (lastOdometer: Int?) -> Unit,
+    animateEntry: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var runEntryAnimation by rememberSaveable { mutableStateOf(animateEntry) }
+    val entryProgress = remember { Animatable(if (runEntryAnimation) 0f else 1f) }
+    LaunchedEffect(Unit) {
+        if (runEntryAnimation) {
+            // Uses Compose's animation clock so reduced-motion settings are respected.
+            entryProgress.animateTo(1f, tween(420, easing = LinearEasing))
+            runEntryAnimation = false
+        }
+    }
+    val showSkeleton = uiState.isLoading && uiState.fuelStatistics == null
 
     // Refresh statistics when screen resumes
     RefreshOnResumeEffect(onResume = { viewModel.loadStatistics() })
@@ -109,15 +140,6 @@ fun HomeScreen(
                 .padding(top = paddingValues.calculateTopPadding())
         ) {
             when {
-                uiState.isLoading && uiState.fuelStatistics == null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
                 uiState.errorMessage != null && uiState.fuelStatistics == null -> {
                     ErrorContent(
                         title = "Failed to load statistics",
@@ -130,9 +152,15 @@ fun HomeScreen(
                 else -> {
                     HomeContent(
                         uiState = uiState,
+                        isPlaceholder = showSkeleton,
+                        entryProgress = entryProgress.value,
+                        placeholderAlpha = 0.6f + 0.4f * entryProgress.value,
                         odometerUnit = odometerUnit,
+                        onExpensesClick = onNavigateToExpenses,
+                        onStatisticsClick = onNavigateToStatistics,
                         modifier = Modifier
                             .fillMaxSize()
+                            .navigationBarsPadding()
                             .padding(
                                 start = 16.dp,
                                 end = 16.dp,
@@ -163,11 +191,16 @@ fun HomeScreen(
 @Composable
 private fun HomeContent(
     uiState: HomeUiState,
+    isPlaceholder: Boolean,
+    entryProgress: Float,
+    placeholderAlpha: Float,
     odometerUnit: String,
+    onExpensesClick: () -> Unit,
+    onStatisticsClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val stats = uiState.fuelStatistics
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Column(
         modifier = modifier.verticalScroll(rememberScrollState()),
@@ -175,56 +208,72 @@ private fun HomeContent(
     ) {
         Text(
             text = "Overview",
+            modifier = Modifier.overviewEntry(entryProgress, 0),
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
 
         StatCard(
+            loading = isPlaceholder,
+            placeholderAlpha = placeholderAlpha,
             title = "Average Fuel Consumption",
             value = stats?.averageFuelConsumption?.let {
                 String.format(Locale.getDefault(), "%.1f L/100km", it)
             } ?: "--",
             icon = Icons.AutoMirrored.Filled.ShowChart,
-            iconColor = FuelGreen
+            iconColor = FuelGreen,
+            modifier = Modifier.overviewEntry(entryProgress, 1).clickable(enabled = !isPlaceholder, onClick = onStatisticsClick)
         )
 
         StatCard(
+            loading = isPlaceholder,
+            placeholderAlpha = placeholderAlpha,
             title = "Last Fuel Consumption",
             value = stats?.lastFuelConsumption?.let {
                 String.format(Locale.getDefault(), "%.1f L/100km", it)
             } ?: "--",
             icon = Icons.Default.LocalGasStation,
-            iconColor = FuelGreen
+            iconColor = FuelGreen,
+            modifier = Modifier.overviewEntry(entryProgress, 2).clickable(enabled = !isPlaceholder, onClick = onExpensesClick)
         )
 
         StatCard(
+            loading = isPlaceholder,
+            placeholderAlpha = placeholderAlpha,
             title = "Last Odometer",
             value = stats?.lastOdometer?.let {
                 "${NumberFormat.getNumberInstance().format(it)} $odometerUnit"
             } ?: "--",
             icon = Icons.Default.Speed,
-            iconColor = MaterialTheme.colorScheme.primary
+            iconColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.overviewEntry(entryProgress, 3).clickable(enabled = !isPlaceholder, onClick = onExpensesClick)
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "Costs",
+            modifier = Modifier.overviewEntry(entryProgress, 4),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
 
         CostsCard(
+            loading = isPlaceholder,
+            placeholderAlpha = placeholderAlpha,
             thisMonthFuel = stats?.thisMonthFuelCost ?: 0.0,
             thisMonthOther = stats?.thisMonthOtherCost ?: 0.0,
             lastMonthFuel = stats?.lastMonthFuelCost ?: 0.0,
-            lastMonthOther = stats?.lastMonthOtherCost ?: 0.0
+            lastMonthOther = stats?.lastMonthOtherCost ?: 0.0,
+            modifier = Modifier.overviewEntry(entryProgress, 5).clickable(enabled = !isPlaceholder, onClick = onExpensesClick)
         )
     }
 }
 
 @Composable
 private fun StatCard(
+    loading: Boolean,
+    placeholderAlpha: Float,
     title: String,
     value: String,
     icon: ImageVector,
@@ -264,8 +313,10 @@ private fun StatCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = value,
+                OverviewValue(
+                    value = value,
+                    loading = loading,
+                    placeholderAlpha = placeholderAlpha,
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -276,13 +327,15 @@ private fun StatCard(
 
 @Composable
 private fun CostsCard(
+    loading: Boolean,
+    placeholderAlpha: Float,
     thisMonthFuel: Double,
     thisMonthOther: Double,
     lastMonthFuel: Double,
     lastMonthOther: Double,
     modifier: Modifier = Modifier
 ) {
-    val currencyFormatter = remember { NumberFormat.getCurrencyInstance() }
+    val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -327,14 +380,22 @@ private fun CostsCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
-                Text(
-                    text = currencyFormatter.format(thisMonthFuel),
+                OverviewValue(
+                    value = currencyFormatter.format(thisMonthFuel),
+                    loading = loading,
+                    placeholderAlpha = placeholderAlpha,
+                    placeholderWidth = 64.dp,
+                    placeholderHeight = 20.dp,
                     style = MaterialTheme.typography.bodyLarge,
                     color = FuelGreen,
                     modifier = Modifier.width(80.dp)
                 )
-                Text(
-                    text = currencyFormatter.format(thisMonthOther),
+                OverviewValue(
+                    value = currencyFormatter.format(thisMonthOther),
+                    loading = loading,
+                    placeholderAlpha = placeholderAlpha,
+                    placeholderWidth = 64.dp,
+                    placeholderHeight = 20.dp,
                     style = MaterialTheme.typography.bodyLarge,
                     color = ServiceBlue,
                     modifier = Modifier.width(80.dp)
@@ -355,19 +416,67 @@ private fun CostsCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f)
                 )
-                Text(
-                    text = currencyFormatter.format(lastMonthFuel),
+                OverviewValue(
+                    value = currencyFormatter.format(lastMonthFuel),
+                    loading = loading,
+                    placeholderAlpha = placeholderAlpha,
+                    placeholderWidth = 64.dp,
+                    placeholderHeight = 20.dp,
                     style = MaterialTheme.typography.bodyLarge,
                     color = FuelGreen,
                     modifier = Modifier.width(80.dp)
                 )
-                Text(
-                    text = currencyFormatter.format(lastMonthOther),
+                OverviewValue(
+                    value = currencyFormatter.format(lastMonthOther),
+                    loading = loading,
+                    placeholderAlpha = placeholderAlpha,
+                    placeholderWidth = 64.dp,
+                    placeholderHeight = 20.dp,
                     style = MaterialTheme.typography.bodyLarge,
                     color = ServiceBlue,
                     modifier = Modifier.width(80.dp)
                 )
             }
         }
+    }
+}
+
+
+@Composable
+private fun OverviewValue(
+    value: String,
+    loading: Boolean,
+    placeholderAlpha: Float,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    placeholderWidth: Dp = 136.dp,
+    placeholderHeight: Dp = 28.dp
+) {
+    val lineHeight = with(LocalDensity.current) { style.lineHeight.toDp() }
+    Crossfade(targetState = loading, animationSpec = tween(160), modifier = modifier.heightIn(min = lineHeight), label = "overviewValue") { isLoading ->
+        if (isLoading) {
+            Box(Modifier.width(placeholderWidth).height(lineHeight)
+                .clearAndSetSemantics { contentDescription = "Loading" }) {
+                Box(Modifier.fillMaxWidth().height(placeholderHeight.coerceAtMost(lineHeight))
+                    .align(Alignment.CenterStart)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f * placeholderAlpha)))
+            }
+        } else {
+            Text(value, style = style, color = color)
+        }
+    }
+}
+
+
+/** Stagger the overview's content while leaving the page surface fully opaque. */
+private fun Modifier.overviewEntry(progress: Float, index: Int): Modifier = composed {
+    val distance = with(LocalDensity.current) { 24.dp.toPx() }
+    val itemProgress = ((progress * 420f - index * 25f) / 280f).coerceIn(0f, 1f)
+    val eased = FastOutSlowInEasing.transform(itemProgress)
+    graphicsLayer {
+        translationY = (1f - eased) * distance
+        alpha = eased
     }
 }
