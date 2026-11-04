@@ -6,21 +6,26 @@ import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.repository.offline.toDomain
 import com.lesicnik.wrench.data.repository.offline.toEntity
 import com.lesicnik.wrench.data.sync.OfflineSyncEngine
+import kotlinx.coroutines.CancellationException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+
+interface LoginVehicleSource {
+    suspend fun fetchVehiclesRemote(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>>
+    suspend fun getCachedVehicles(serverUrl: String): List<Vehicle>
+}
 
 class VehicleRepository(
     private val database: WrenchDatabase,
     private val syncEngine: OfflineSyncEngine = OfflineSyncEngine(database)
-) {
+) : LoginVehicleSource {
 
-    suspend fun hasCachedVehicles(serverUrl: String): Boolean {
-        return database.vehicleDao().getVehicles(serverUrl).isNotEmpty()
-    }
-
-    suspend fun getCachedVehicles(serverUrl: String): List<Vehicle> {
+    override suspend fun getCachedVehicles(serverUrl: String): List<Vehicle> {
         return database.vehicleDao().getVehicles(serverUrl).map { it.toDomain() }
     }
 
-    suspend fun fetchVehiclesRemote(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {
+    override suspend fun fetchVehiclesRemote(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {
         return try {
             val api = NetworkModule.getApi(serverUrl)
             val response = api.getVehicles(apiKey)
@@ -37,12 +42,20 @@ class VehicleRepository(
                     401 -> "Invalid API key"
                     403 -> "Access forbidden - check API key permissions"
                     404 -> "Server not found - check server URL"
+                    in 300..399 -> "Server redirected the request - enter its final URL"
                     else -> "Server error: ${response.code()}"
                 }
-                ApiResult.Error(errorMessage)
+                val type = if (response.code() in listOf(401, 403)) ApiErrorType.AUTHENTICATION else ApiErrorType.OTHER
+                ApiResult.Error(errorMessage, type)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            ApiResult.Error(e.message ?: "Unknown error occurred")
+            val type = when (e) {
+                is SocketException, is SocketTimeoutException, is UnknownHostException -> ApiErrorType.NETWORK
+                else -> ApiErrorType.OTHER
+            }
+            ApiResult.Error(e.message ?: "Unknown error occurred", type)
         }
     }
 

@@ -4,14 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lesicnik.wrench.data.remote.Vehicle
+import com.lesicnik.wrench.data.repository.ApiErrorType
 import com.lesicnik.wrench.data.repository.ApiResult
+import com.lesicnik.wrench.data.repository.Credentials
 import com.lesicnik.wrench.data.repository.CredentialsRepository
+import com.lesicnik.wrench.data.repository.CredentialsStore
+import com.lesicnik.wrench.data.repository.LoginVehicleSource
 import com.lesicnik.wrench.data.repository.VehicleRepository
 import com.lesicnik.wrench.util.LocalNetwork
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class LoginUiState(
     val serverUrl: String = "",
@@ -29,12 +34,14 @@ data class LoginUiState(
 )
 
 class LoginViewModel(
-    private val credentialsRepository: CredentialsRepository,
-    private val vehicleRepository: VehicleRepository
+    private val credentialsRepository: CredentialsStore,
+    private val vehicleRepository: LoginVehicleSource
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
+    private var offlineCredentials: Credentials? = null
+    private var loginAttempt = 0
 
     init {
         checkStoredCredentials()
@@ -57,11 +64,22 @@ class LoginViewModel(
     }
 
     fun onServerUrlChanged(url: String) {
+        invalidateOfflineLogin()
         _uiState.value = _uiState.value.copy(serverUrl = url, errorMessage = null)
     }
 
     fun onApiKeyChanged(key: String) {
+        invalidateOfflineLogin()
         _uiState.value = _uiState.value.copy(apiKey = key, errorMessage = null)
+    }
+
+    private fun invalidateOfflineLogin() {
+        loginAttempt++
+        offlineCredentials = null
+        _uiState.value = _uiState.value.copy(
+            isLoading = false, showOfflinePrompt = false, offlinePromptMessage = null,
+            showHttpWarning = false, pendingHttpLogin = false
+        )
     }
 
     fun onSaveCredentialsChanged(save: Boolean) {
@@ -87,22 +105,28 @@ class LoginViewModel(
     }
 
     fun dismissOfflinePrompt() {
+        offlineCredentials = null
         _uiState.value = _uiState.value.copy(showOfflinePrompt = false)
     }
 
     fun continueOfflineLogin() {
         val state = _uiState.value
+        val credentials = Credentials(state.serverUrl, state.apiKey)
+        if (!state.showOfflinePrompt || credentials != offlineCredentials) return
+        val attempt = loginAttempt
         viewModelScope.launch {
-            if (state.saveCredentials) {
-                credentialsRepository.saveCredentials(state.serverUrl, state.apiKey)
-            }
+            // Offline access only uses credentials previously verified by the server.
+            if (credentialsRepository.getCredentials() != credentials) return@launch
+            val vehicles = vehicleRepository.getCachedVehicles(state.serverUrl)
+            if (attempt != loginAttempt || offlineCredentials != credentials) return@launch
+            offlineCredentials = null
             _uiState.value = _uiState.value.copy(
                 showOfflinePrompt = false,
                 offlinePromptMessage = null,
                 isLoading = false,
                 errorMessage = null,
                 isLoggedIn = true,
-                vehicles = vehicleRepository.getCachedVehicles(state.serverUrl)
+                vehicles = vehicles
             )
         }
     }
@@ -125,8 +149,14 @@ class LoginViewModel(
             return
         }
 
-        if (state.serverUrl.trim().lowercase().startsWith("http://")) {
-            if (!LocalNetwork.isLocalHttpUrl(state.serverUrl)) {
+        val server = state.serverUrl.trim().toHttpUrlOrNull()
+        if (server == null || server.username.isNotEmpty() || server.password.isNotEmpty()) {
+            _uiState.value = state.copy(errorMessage = "Enter a valid HTTP or HTTPS server URL without embedded credentials")
+            return
+        }
+
+        if (server.scheme == "http") {
+            if (!LocalNetwork.isLocalHost(server.host)) {
                 _uiState.value = state.copy(
                     errorMessage = "Insecure HTTP is only allowed for local network addresses"
                 )
@@ -143,15 +173,23 @@ class LoginViewModel(
 
     private fun performLogin(autoLogin: Boolean) {
         val state = _uiState.value
+        val credentials = Credentials(state.serverUrl, state.apiKey)
+        val attempt = ++loginAttempt
+        offlineCredentials = null
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            _uiState.value = _uiState.value.copy(
+                isLoading = true, errorMessage = null, showOfflinePrompt = false, offlinePromptMessage = null
+            )
 
-            when (val result = vehicleRepository.fetchVehiclesRemote(state.serverUrl, state.apiKey)) {
+            val result = vehicleRepository.fetchVehiclesRemote(state.serverUrl, state.apiKey)
+            if (attempt != loginAttempt) return@launch
+            when (result) {
                 is ApiResult.Success -> {
                     if (state.saveCredentials && !autoLogin) {
                         credentialsRepository.saveCredentials(state.serverUrl, state.apiKey)
                     }
+                    if (attempt != loginAttempt) return@launch
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         isLoggedIn = true,
@@ -159,8 +197,16 @@ class LoginViewModel(
                     )
                 }
                 is ApiResult.Error -> {
-                    val hasCachedData = vehicleRepository.hasCachedVehicles(state.serverUrl)
-                    if (hasCachedData) {
+                    val storedCredentials = credentialsRepository.getCredentials()
+                    if (result.type == ApiErrorType.AUTHENTICATION && storedCredentials == credentials) {
+                        credentialsRepository.deleteCredentials()
+                    }
+                    val canContinueOffline = result.type == ApiErrorType.NETWORK &&
+                        storedCredentials == credentials &&
+                        vehicleRepository.getCachedVehicles(state.serverUrl).isNotEmpty()
+                    if (attempt != loginAttempt) return@launch
+                    if (canContinueOffline) {
+                        offlineCredentials = credentials
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             showOfflinePrompt = true,

@@ -13,7 +13,13 @@ data class Credentials(
     val apiKey: String
 )
 
-class CredentialsRepository(context: Context) {
+interface CredentialsStore {
+    suspend fun getCredentials(): Credentials?
+    suspend fun saveCredentials(serverUrl: String, apiKey: String)
+    suspend fun deleteCredentials()
+}
+
+class CredentialsRepository(context: Context) : CredentialsStore {
 
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -51,7 +57,7 @@ class CredentialsRepository(context: Context) {
         }
     }
 
-    suspend fun getCredentials(): Credentials? = withContext(Dispatchers.IO) {
+    override suspend fun getCredentials(): Credentials? = withContext(Dispatchers.IO) {
         val serverUrl = encryptedPrefs.getString(KEY_SERVER_URL, null)
         val apiKey = encryptedPrefs.getString(KEY_API_KEY, null)
 
@@ -62,14 +68,14 @@ class CredentialsRepository(context: Context) {
         }
     }
 
-    suspend fun saveCredentials(serverUrl: String, apiKey: String) = withContext(Dispatchers.IO) {
+    override suspend fun saveCredentials(serverUrl: String, apiKey: String) = withContext(Dispatchers.IO) {
         encryptedPrefs.edit()
             .putString(KEY_SERVER_URL, serverUrl)
             .putString(KEY_API_KEY, apiKey)
             .apply()
     }
 
-    suspend fun deleteCredentials() = withContext(Dispatchers.IO) {
+    override suspend fun deleteCredentials() = withContext(Dispatchers.IO) {
         encryptedPrefs.edit()
             .remove(KEY_SERVER_URL)
             .remove(KEY_API_KEY)

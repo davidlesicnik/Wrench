@@ -21,6 +21,16 @@ Wrench is an Android companion app for [LubeLogger](https://github.com/hargata/l
   * Edit existing expenses
   * Delete records.
 
+## Security and offline access
+
+Use HTTPS when possible. Local HTTP requires confirmation and sends the API key
+and records without encryption. Enter the server's final URL: API redirects are
+blocked, and authenticated photos must use the same scheme, host, and port.
+
+Offline login requires matching saved credentials from a successful login and a
+connection failure. Rejected keys cannot unlock cached data. Credentials and local
+databases, including unsynced edits, are excluded from backups and device transfers.
+
 ## Installation & Build
 
 ### Prerequisites

@@ -1,5 +1,7 @@
 package com.lesicnik.wrench.util
 
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.URI
 
 object LocalNetwork {
@@ -49,19 +51,15 @@ object LocalNetwork {
     }
 
     private fun isLocalIpv6(host: String): Boolean {
-        if (host == "::1") return true // Loopback
-
-        // Link-local fe80::/10
-        if (host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb")) {
-            return true
+        // Only parse numeric literals; never resolve a hostname to decide whether HTTP is safe.
+        if (':' !in host || !host.matches(Regex("[0-9a-f:.]+"))) return false
+        val address = try {
+            InetAddress.getByName(host) as? Inet6Address ?: return false
+        } catch (_: Exception) {
+            return false
         }
-
-        // Unique local fc00::/7
-        if (host.startsWith("fc") || host.startsWith("fd")) {
-            return true
-        }
-
-        return false
+        return address.isLoopbackAddress || address.isLinkLocalAddress ||
+            (address.address[0].toInt() and 0xfe) == 0xfc // Unique local fc00::/7
     }
 }
 
