@@ -1,12 +1,10 @@
 package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,12 +17,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -36,8 +33,6 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -67,9 +62,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.remote.records.ExpenseType
@@ -129,11 +125,16 @@ fun ExpensesScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = vehicleName,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column {
+                        Text("Expenses", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = vehicleName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
@@ -144,8 +145,7 @@ fun ExpensesScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = MaterialTheme.colorScheme.background
                 ),
                 actions = {
                     IconButton(onClick = { showFilterSheet = true }) {
@@ -188,6 +188,20 @@ fun ExpensesScreen(
                 .padding(top = paddingValues.calculateTopPadding())
         ) {
             Column(Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = BottomBarHeight)) {
+            if (hasActiveFilters) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${uiState.filteredExpenses.size} ${if (uiState.filteredExpenses.size == 1) "expense" else "expenses"} shown",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = viewModel::resetFilters) { Text("Reset filters") }
+                }
+            }
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading && uiState.expenses.isNotEmpty(),
                 onRefresh = { viewModel.loadExpenses(forceRefresh = true) },
@@ -249,9 +263,8 @@ fun ExpensesScreen(
                             modifier = Modifier.fillMaxSize(),
                             state = listState,
                             contentPadding = PaddingValues(
-                                bottom = 16.dp
-                            ),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                bottom = 24.dp
+                            )
                         ) {
                             monthOrder.forEach { month ->
                                 val headerKey = "month_${month}"
@@ -263,14 +276,21 @@ fun ExpensesScreen(
                                         // At the absolute top of the list we don't need the "sticky" shadow.
                                         (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset > 0)
 
-                                    MonthDivider(month = month, isSticky = isSticky, total = expensesByMonth[month].orEmpty().sumOf { it.cost })
+                                    MonthDivider(
+                                        month = month,
+                                        isSticky = isSticky,
+                                        total = expensesByMonth[month].orEmpty().sumOf { it.cost }
+                                    )
                                 }
-                                items(expensesByMonth[month].orEmpty(), key = { "${it.type}_${it.id}" }) { expense ->
-                                    ExpenseCard(
+                                val monthExpenses = expensesByMonth[month].orEmpty()
+                                itemsIndexed(monthExpenses, key = { _, expense -> "${expense.type}_${expense.id}" }) { index, expense ->
+                                    ExpenseRow(
                                         expense = expense,
-                                        modifier = Modifier.padding(horizontal = 16.dp),
+                                        modifier = Modifier.padding(horizontal = 20.dp),
                                         odometerUnit = odometerUnit,
-                                        onClick = { selectedExpense = expense }
+                                        onClick = { selectedExpense = expense },
+                                        isFirst = index == 0,
+                                        isLast = index == monthExpenses.lastIndex
                                     )
                                 }
                             }
@@ -411,177 +431,106 @@ fun ExpensesScreen(
 }
 
 @Composable
-private fun ExpenseCard(
+private fun ExpenseRow(
     expense: Expense,
     odometerUnit: String,
     onClick: () -> Unit,
+    isFirst: Boolean,
+    isLast: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMM") }
     val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        label = "cardScale"
-    )
+    val colors = MaterialTheme.colorScheme
+    val isLight = colors.surface.luminance() > 0.5f
+    val typeStyle = expense.type.getStyle()
+    val fuelDetails = buildList {
+        expense.liters?.let { add(String.format(Locale.getDefault(), "%.2f L", it)) }
+        expense.fuelEconomy?.let { add(String.format(Locale.getDefault(), "%.1f L/100 km", it)) }
+        if (expense.isFillToFull == false) add("Partial fill")
+        if (expense.isMissedFuelUp == true) add("Missed last")
+    }
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                    },
-                    onTap = { onClick() }
-                )
-            },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(
+            topStart = if (isFirst) 20.dp else 0.dp,
+            topEnd = if (isFirst) 20.dp else 0.dp,
+            bottomStart = if (isLast) 20.dp else 0.dp,
+            bottomEnd = if (isLast) 20.dp else 0.dp
+        ),
+        color = if (isLight) colors.surfaceContainerLowest else colors.surfaceContainerLow
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            ExpenseIcon(type = expense.type)
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                // Date and odometer on the same line
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = expense.date.format(dateFormatter),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    expense.odometer?.let { odometer ->
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                ExpenseIcon(type = expense.type)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
                         Text(
-                            text = "•",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = expense.description.ifBlank { typeStyle.label },
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${NumberFormat.getNumberInstance().format(odometer)} $odometerUnit",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = currencyFormatter.format(expense.cost),
+                            style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.3).sp
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = expense.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                if (expense.syncState != ExpenseSyncState.SYNCED) {
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = when (expense.syncState) {
-                            ExpenseSyncState.PENDING_CREATE,
-                            ExpenseSyncState.PENDING_UPDATE,
-                            ExpenseSyncState.PENDING_DELETE -> "Pending sync"
-                            ExpenseSyncState.CONFLICT -> "Conflict - open and save to keep local changes"
-                            ExpenseSyncState.SYNC_ERROR -> "Sync error"
-                            ExpenseSyncState.SYNCED -> ""
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when (expense.syncState) {
-                            ExpenseSyncState.CONFLICT,
-                            ExpenseSyncState.SYNC_ERROR -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.tertiary
-                        }
+                        text = buildList {
+                            add(expense.date.format(dateFormatter))
+                            expense.odometer?.let { add("${NumberFormat.getIntegerInstance().format(it)} $odometerUnit") }
+                        }.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
                     )
-                }
-
-                // Fuel-specific details: liters, flags, and economy
-                if (
-                    expense.liters != null ||
-                    expense.isFillToFull == false ||
-                    expense.isMissedFuelUp == true ||
-                    expense.fuelEconomy != null
-                ) {
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        var hasFuelDetail = false
-
-                        expense.liters?.let { liters ->
-                            Text(
-                                text = String.format(Locale.getDefault(), "%.2f L", liters),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            hasFuelDetail = true
-                        }
-
-                        if (expense.isFillToFull == false) {
-                            if (hasFuelDetail) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                    if (fuelDetails.isNotEmpty()) {
+                        Text(
+                            text = fuelDetails.joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                    if (expense.syncState != ExpenseSyncState.SYNCED) {
+                        Text(
+                            text = when (expense.syncState) {
+                                ExpenseSyncState.PENDING_CREATE,
+                                ExpenseSyncState.PENDING_UPDATE,
+                                ExpenseSyncState.PENDING_DELETE -> "Pending sync"
+                                ExpenseSyncState.CONFLICT -> "Conflict - open and save to keep local changes"
+                                ExpenseSyncState.SYNC_ERROR -> "Sync error"
+                                ExpenseSyncState.SYNCED -> ""
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = when (expense.syncState) {
+                                ExpenseSyncState.CONFLICT,
+                                ExpenseSyncState.SYNC_ERROR -> colors.error
+                                else -> colors.tertiary
                             }
-                            Text(
-                                text = "Partial fill",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            hasFuelDetail = true
-                        }
-
-                        if (expense.isMissedFuelUp == true) {
-                            if (hasFuelDetail) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = "Missed last",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            hasFuelDetail = true
-                        }
-
-                        expense.fuelEconomy?.let { economy ->
-                            if (hasFuelDetail) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Text(
-                                text = String.format(Locale.getDefault(), "%.1f L/100km", economy),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        )
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = currencyFormatter.format(expense.cost),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            if (!isLast) {
+                HorizontalDivider(
+                    Modifier.padding(start = 64.dp, end = 16.dp),
+                    color = colors.outlineVariant.copy(alpha = 0.35f)
+                )
+            }
         }
     }
 }
@@ -590,15 +539,15 @@ private fun ExpenseCard(
 private fun ExpenseIcon(type: ExpenseType) {
     Box(
         modifier = Modifier
-            .size(48.dp)
-            .background(type.color.copy(alpha = 0.15f), CircleShape),
+            .size(36.dp)
+            .background(type.color.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = type.icon,
-            contentDescription = type.name,
-            tint = type.color,
-            modifier = Modifier.size(24.dp)
+            contentDescription = type.getStyle().label,
+            tint = androidx.compose.ui.graphics.lerp(type.color, MaterialTheme.colorScheme.onSurface, 0.25f),
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -615,22 +564,26 @@ private fun MonthDivider(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        // Match Scaffold's base color so the sticky header doesn't "flash" a different tone.
         color = MaterialTheme.colorScheme.background,
-        shadowElevation = if (isSticky) 6.dp else 0.dp
+        shadowElevation = if (isSticky) 2.dp else 0.dp
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(month.format(monthFormatter), style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f))
-                Text(formatter.format(total), style = MaterialTheme.typography.titleSmall)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text(
+                month.format(monthFormatter).uppercase(Locale.getDefault()),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 1.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                formatter.format(total),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
