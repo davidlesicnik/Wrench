@@ -54,6 +54,29 @@ cd wrench
 
 The .apk will be located in `app/build/outputs/apk/debug/`.
 
+## CI and releases
+
+Pull requests and pushes to `master`/`main` run compilation and JVM unit tests.
+These checks do not assemble APKs or require signing secrets. CodeQL runs separately.
+Dependabot batches weekly Gradle minor/patch updates and GitHub Actions updates;
+major Gradle upgrades stay separate. Security updates have their own groups.
+Automatic merging is disabled.
+
+To release:
+
+1. Increase both `versionName` and `versionCode` in `app/build.gradle.kts`, then
+   merge the change into the default branch. Versions only need bumping for releases.
+2. Open **Actions → Release → Run workflow**, selecting the default branch.
+3. Review and publish the resulting draft release with its signed APK.
+
+The release workflow checks that both versions exceed those in published `v*`
+releases (including prereleases), builds using the existing `RELEASE_KEYSTORE_*`
+secrets, and creates a draft targeting the selected commit. An unpublished draft
+can be rebuilt at the same version. Only manual runs from the default branch are allowed.
+
+For merge enforcement, make **Compile and unit tests** a required status check in
+GitHub branch protection or rulesets after the workflow has run once.
+
 ## Contributing
 
 There are two ways to contribute:
