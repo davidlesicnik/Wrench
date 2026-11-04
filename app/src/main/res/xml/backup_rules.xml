@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
    Backup rules for Android API < 31.
-   Excludes encrypted shared preferences containing sensitive credentials.
+   Excludes credentials and local databases containing private vehicle and expense data.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="wrench_secure_prefs.xml"/>
+    <exclude domain="database" path="."/>
     <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
 </full-backup-content>

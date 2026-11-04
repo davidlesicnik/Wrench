@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
    Data extraction rules for Android API 31+.
-   Excludes encrypted shared preferences containing sensitive credentials.
+   Excludes credentials and local databases containing private vehicle and expense data.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="wrench_secure_prefs.xml"/>
+        <exclude domain="database" path="."/>
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="wrench_secure_prefs.xml"/>
+        <exclude domain="database" path="."/>
         <exclude domain="sharedpref" path="__androidx_security_crypto_encrypted_prefs__.xml"/>
     </device-transfer>
 </data-extraction-rules>

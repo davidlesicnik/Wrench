@@ -52,5 +52,22 @@ class LocalNetworkTest {
         assertFalse(LocalNetwork.isLocalHttpUrl("http://8.8.8.8"))
         assertFalse(LocalNetwork.isLocalHttpUrl("https://192.168.1.2"))
     }
+    @Test
+    fun `IPv6-looking public domains and malformed literals are rejected`() {
+        for (host in listOf("fc-attacker.example", "fd.example", "fe80.example", "fc00", "fd00::invalid", "fe80:::1", "fc00::1::2")) {
+            assertFalse(host, LocalNetwork.isLocalHost(host))
+            assertFalse(host, LocalNetwork.isLocalHttpUrl("http://$host"))
+        }
+    }
+
+    @Test
+    fun `IPv6 local ranges use parsed address bits`() {
+        for (host in listOf("0:0:0:0:0:0:0:1", "fc00::1", "fdff::1", "febf::1", "fe80::1%wlan0")) {
+            assertTrue(host, LocalNetwork.isLocalHost(host))
+        }
+        for (host in listOf("2001:4860:4860::8888", "fe7f::1", "fec0::1", "::", "::ffff:8.8.8.8")) {
+            assertFalse(host, LocalNetwork.isLocalHost(host))
+        }
+    }
 }
 

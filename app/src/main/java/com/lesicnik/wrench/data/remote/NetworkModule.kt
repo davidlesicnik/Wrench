@@ -24,6 +24,9 @@ object NetworkModule {
         }
 
         OkHttpClient.Builder()
+            // A redirect must never forward the custom API-key header to another origin.
+            .followRedirects(false)
+            .followSslRedirects(false)
             .addInterceptor(LocalHttpOnlyInterceptor())
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
