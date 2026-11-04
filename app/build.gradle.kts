@@ -169,9 +169,6 @@ dependencies {
     // Security
     implementation(libs.androidx.security.crypto)
 
-    // Charts
-    implementation(libs.vico.compose.m3)
-
     // Offline cache + sync
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
