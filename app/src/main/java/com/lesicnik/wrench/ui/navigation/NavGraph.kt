@@ -1,6 +1,7 @@
 package com.lesicnik.wrench.ui.navigation
 
 import android.net.Uri
+import java.time.LocalDate
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -73,9 +74,9 @@ sealed class Screen(val route: String) {
             return "home/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
         }
     }
-    data object Expenses : Screen("expenses/{vehicleId}/{vehicleName}/{odometerUnit}") {
-        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String {
-            return "expenses/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
+    data object Expenses : Screen("expenses/{vehicleId}/{vehicleName}/{odometerUnit}?thisMonth={thisMonth}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String, thisMonth: Boolean = false): String {
+            return "expenses/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}?thisMonth=$thisMonth"
         }
     }
     data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}") {
@@ -181,6 +182,12 @@ fun WrenchNavGraph(
                 onNavigateToStatistics = {
                     navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
+                onMonthlyExpenses = {
+                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit, thisMonth = true))
+                },
+                onOpenExpense = { expense ->
+                    navController.navigate(Screen.EditExpense.createRoute(vehicleId, odometerUnit, expense.id, expense.type))
+                },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
                 }
@@ -189,7 +196,10 @@ fun WrenchNavGraph(
 
         composable(
             route = Screen.Expenses.route,
-            arguments = vehicleNavArguments(),
+            arguments = vehicleNavArguments() + navArgument("thisMonth") {
+                type = NavType.BoolType
+                defaultValue = false
+            },
             enterTransition = { EnterTransition.None },
             exitTransition = {
                 if (targetState.destination.route == Screen.Vehicles.route)
@@ -209,6 +219,14 @@ fun WrenchNavGraph(
                     vehicleId = vehicleId
                 )
             )
+
+            val thisMonth = backStackEntry.arguments?.getBoolean("thisMonth") == true
+            LaunchedEffect(viewModel, thisMonth) {
+                if (thisMonth) {
+                    val today = LocalDate.now()
+                    viewModel.setDateRange(today.withDayOfMonth(1), today)
+                }
+            }
 
             ExpensesScreen(
                 viewModel = viewModel,

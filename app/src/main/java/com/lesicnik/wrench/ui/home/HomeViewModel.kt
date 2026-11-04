@@ -3,7 +3,6 @@ package com.lesicnik.wrench.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
@@ -13,10 +12,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 
 data class HomeUiState(
     val fuelStatistics: FuelStatistics? = null,
+    val overview: HomeOverview? = null,
     val isLoading: Boolean = true,
     val errorMessage: String? = null
 )
@@ -45,19 +44,16 @@ class HomeViewModel(
 
             // If we have cached data and not forcing refresh, use it immediately
             if (!forceRefresh && cachedStats != null && cachedExpenses != null) {
-                val stats = calculateMonthlyCosts(cachedStats, cachedExpenses)
                 _uiState.value = _uiState.value.copy(
-                    fuelStatistics = stats,
-                    isLoading = false
+                    fuelStatistics = cachedStats,
+                    overview = buildHomeOverview(cachedExpenses),
+                    isLoading = false,
+                    errorMessage = null
                 )
                 return@launch
             }
 
-            // Only show loading if we don't have data yet
-            val hasData = _uiState.value.fuelStatistics != null
-            if (!hasData) {
-                _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            }
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
             val credentials = credentialsRepository.getCredentials()
             if (credentials == null) {
@@ -91,15 +87,13 @@ class HomeViewModel(
 
             when (statsResult) {
                 is ApiResult.Success -> {
-                    val stats = if (expensesResult is ApiResult.Success) {
-                        calculateMonthlyCosts(statsResult.data, expensesResult.data)
-                    } else {
-                        statsResult.data
-                    }
-
                     _uiState.value = _uiState.value.copy(
-                        fuelStatistics = stats,
-                        isLoading = false
+                        fuelStatistics = statsResult.data,
+                        overview = if (expensesResult is ApiResult.Success) {
+                            buildHomeOverview(expensesResult.data)
+                        } else _uiState.value.overview,
+                        isLoading = false,
+                        errorMessage = (expensesResult as? ApiResult.Error)?.message
                     )
                 }
                 is ApiResult.Error -> {
@@ -110,35 +104,6 @@ class HomeViewModel(
                 }
             }
         }
-    }
-
-    private fun calculateMonthlyCosts(
-        stats: FuelStatistics,
-        expenses: List<com.lesicnik.wrench.data.remote.records.Expense>
-    ): FuelStatistics {
-        val now = LocalDate.now()
-        val thisMonthStart = now.withDayOfMonth(1)
-        val lastMonthStart = thisMonthStart.minusMonths(1)
-
-        val thisMonthExpenses = expenses.filter { it.date >= thisMonthStart }
-        val lastMonthExpenses = expenses.filter {
-            it.date >= lastMonthStart && it.date < thisMonthStart
-        }
-
-        return stats.copy(
-            thisMonthFuelCost = thisMonthExpenses
-                .filter { it.type == ExpenseType.FUEL }
-                .sumOf { it.cost },
-            thisMonthOtherCost = thisMonthExpenses
-                .filter { it.type != ExpenseType.FUEL }
-                .sumOf { it.cost },
-            lastMonthFuelCost = lastMonthExpenses
-                .filter { it.type == ExpenseType.FUEL }
-                .sumOf { it.cost },
-            lastMonthOtherCost = lastMonthExpenses
-                .filter { it.type != ExpenseType.FUEL }
-                .sumOf { it.cost }
-        )
     }
 
     fun clearError() {
