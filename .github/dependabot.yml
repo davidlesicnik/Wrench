@@ -6,6 +6,12 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     groups:
+      android-build-tooling:
+        patterns:
+          - "gradle-wrapper"
+          - "com.android.application"
+          - "org.jetbrains.kotlin.*"
+          - "com.google.devtools.ksp"
       gradle-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]

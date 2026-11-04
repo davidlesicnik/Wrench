@@ -46,7 +46,7 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(command -v sdkmanager)"
           fi
-          "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "platforms;android-36"
+          "$SDKMANAGER" --sdk_root="${ANDROID_SDK_ROOT}" "platforms;android-37.0"
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:

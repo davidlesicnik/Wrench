@@ -25,8 +25,9 @@ Wrench is an Android companion app for [LubeLogger](https://github.com/hargata/l
 
 ### Prerequisites
 
-* Android device running API 24 or higher.
+* Android device running API 29 or higher.
 * A LubeLogger instance with API access enabled.
+* JDK 17 or newer and Android SDK Platform 37.0 for source builds.
 
 ### Building from Source
 
@@ -58,8 +59,9 @@ The .apk will be located in `app/build/outputs/apk/debug/`.
 
 Pull requests and pushes to `master`/`main` run compilation and JVM unit tests.
 These checks do not assemble APKs or require signing secrets. CodeQL runs separately.
-Dependabot batches weekly Gradle minor/patch updates and GitHub Actions updates;
-major Gradle upgrades stay separate. Security updates have their own groups.
+Dependabot groups Gradle, AGP, Kotlin, and KSP updates together because their
+versions must be compatible. Library minor/patch updates and GitHub Actions
+updates have separate weekly groups. Security updates have their own groups.
 Automatic merging is disabled.
 
 To release:

@@ -33,7 +33,7 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - name: Install Android SDK platform
-        run: sdkmanager "platforms;android-36"
+        run: sdkmanager "platforms;android-37.0"
       - name: Test release version validation
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Compile and run unit tests
