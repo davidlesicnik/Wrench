@@ -32,6 +32,8 @@ class CalendarInstrumentedTest {
     @Test
     fun monthSelectionDetailsAndMileageWork() {
         show(CalendarUiState(reminders, false, System.currentTimeMillis()))
+        screenshot("maintenance-agenda")
+        compose.onNodeWithText("Calendar", substring = false).performClick()
         compose.onNodeWithContentDescription("Next month").performClick()
         compose.onAllNodesWithText("December 2026").onFirst().assertIsDisplayed()
         compose.onNodeWithContentDescription("Previous month").performClick()
@@ -49,8 +51,8 @@ class CalendarInstrumentedTest {
         screenshot("calendar-detail")
         compose.onNodeWithContentDescription("Close").performClick()
 
-        compose.onNodeWithTag("calendar-list").performScrollToNode(hasText("Mileage · 2"))
-        compose.onNodeWithText("Mileage · 2").performClick()
+        compose.onNodeWithTag("calendar-list").performScrollToNode(hasText("Mileage", substring = false))
+        compose.onNodeWithText("Mileage").performClick()
         compose.onNodeWithText("Mileage reminders").assertIsDisplayed()
         compose.onNodeWithTag("calendar-list").performScrollToNode(hasText("Tyre rotation"))
         compose.onNodeWithText("40 km remaining").assertIsDisplayed()
@@ -63,7 +65,7 @@ class CalendarInstrumentedTest {
             ReminderUrgency.PAST_DUE, null, 120000, -300, "", "") +
             Reminder(6, 1, "Overdue coolant", ReminderMetric.DATE, ReminderUrgency.PAST_DUE, today.minusMonths(1), null, null, "", "")
         show(CalendarUiState(overdue, false, System.currentTimeMillis()))
-        compose.onNodeWithContentDescription("View overdue reminders").performClick()
+        compose.onNodeWithText("3 overdue · Review").performClick()
         compose.onNodeWithText("Overdue reminders").assertIsDisplayed()
         compose.onNodeWithTag("calendar-list").performScrollToNode(hasText("Overdue coolant"))
         compose.onNodeWithText("Overdue coolant").assertIsDisplayed()
@@ -99,10 +101,10 @@ class CalendarInstrumentedTest {
     fun addingUsesTheSelectedDateAndMileageView() {
         var selection: Pair<LocalDate, ReminderMetric>? = null
         show(CalendarUiState(reminders, false, System.currentTimeMillis()), onAdd = { date, metric -> selection = date to metric })
-        compose.onNodeWithText("Mileage · 2").performClick()
+        compose.onNodeWithText("Mileage").performClick()
         compose.onNodeWithContentDescription("Add reminder").performClick()
         compose.runOnIdle { assertEquals(today to ReminderMetric.ODOMETER, selection) }
-        compose.onNodeWithText("Calendar · 3").performClick()
+        compose.onNodeWithText("Calendar").performClick()
         val date = today.withDayOfMonth(20)
         val description = date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL)) + ", 1 reminder"
         compose.onNodeWithTag("calendar-list").performScrollToNode(hasContentDescription(description))
@@ -111,10 +113,26 @@ class CalendarInstrumentedTest {
         compose.runOnIdle { assertEquals(date to ReminderMetric.DATE, selection) }
     }
 
+    @Test
+    fun agendaCombinesBothKindsAndServiceRequiresAnExplicitAction() {
+        var service: Reminder? = null
+        compose.setContent { WrenchTheme {
+            CalendarContent(CalendarUiState(reminders, false, System.currentTimeMillis()), "2000 Test Test", "km", {}, {}, {}, { _, _ -> }, today,
+                onRecordService = { service = it })
+        } }
+        compose.onNodeWithText("Your maintenance plan").assertIsDisplayed()
+        compose.onNodeWithTag("calendar-list").performScrollToNode(hasText("Oil and filter"))
+        compose.onAllNodesWithText("Oil and filter").assertCountEquals(1)
+        compose.onNodeWithText("Oil and filter").performClick()
+        compose.runOnIdle { org.junit.Assert.assertNull(service) }
+        compose.onNodeWithText("Record service").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(reminders.first(), service) }
+    }
+
     private fun show(state: CalendarUiState, refresh: () -> Unit = {}, onTab: (BottomTab) -> Unit = {},
         onAdd: (LocalDate, ReminderMetric) -> Unit = { _, _ -> }) {
         compose.setContent {
-            WrenchTheme {
+            WrenchTheme(darkTheme = InstrumentationRegistry.getArguments().getString("darkUx") == "true", dynamicColor = false) {
                 CalendarContent(state, "2000 Test Test", "km", refresh, {}, onTab, onAdd, today, onManage = {})
             }
         }

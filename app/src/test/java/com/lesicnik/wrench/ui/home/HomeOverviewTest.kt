@@ -46,4 +46,22 @@ class HomeOverviewTest {
         assertTrue(summary.recentExpenses.isEmpty())
         assertEquals(0.0, summary.thisMonthFuel + summary.thisMonthOther, 0.001)
     }
+    @Test
+    fun `month to date comparison excludes the rest of the previous month`() {
+        val summary = buildHomeOverview(listOf(
+            expense(1, "2025-12-01", 10.0), expense(2, "2025-12-04", 20.0),
+            expense(3, "2025-12-05", 999.0), expense(4, "2026-01-04", 40.0)
+        ), today)
+        assertEquals(30.0, summary.previousMonthToDate, 0.001)
+        assertEquals(LocalDate.of(2025, 12, 4), summary.comparisonEnd)
+    }
+
+    @Test
+    fun `comparison clamps the day to the end of a shorter previous month`() {
+        val summary = buildHomeOverview(listOf(expense(1, "2024-02-29", 20.0), expense(2, "2024-03-01", 30.0)),
+            LocalDate.of(2024, 3, 31))
+        assertEquals(LocalDate.of(2024, 2, 29), summary.comparisonEnd)
+        assertEquals(20.0, summary.previousMonthToDate, 0.001)
+    }
+
 }

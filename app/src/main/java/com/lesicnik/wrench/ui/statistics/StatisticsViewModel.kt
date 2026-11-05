@@ -19,7 +19,8 @@ data class StatisticsUiState(
     val costTrends: List<CostTrendPoint> = emptyList(),
     val fuelEconomyTrends: List<FuelEconomyPoint> = emptyList(),
     val odometerTrends: List<OdometerPoint> = emptyList(),
-    val keyStatistics: KeyStatistics? = null
+    val keyStatistics: KeyStatistics? = null,
+    val spendingComparison: SpendingComparison? = null
 )
 
 class StatisticsViewModel(
@@ -92,7 +93,8 @@ class StatisticsViewModel(
             costTrends = StatisticsCalculator.calculateCostTrends(filteredExpenses, period),
             fuelEconomyTrends = StatisticsCalculator.calculateFuelEconomyTrends(filteredExpenses),
             odometerTrends = StatisticsCalculator.calculateOdometerTrends(filteredExpenses),
-            keyStatistics = StatisticsCalculator.calculateKeyStatistics(filteredExpenses, period)
+            keyStatistics = StatisticsCalculator.calculateKeyStatistics(filteredExpenses, period),
+            spendingComparison = StatisticsCalculator.spendingComparison(allExpenses, period)
         )
     }
 

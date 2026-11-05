@@ -1,61 +1,28 @@
 package com.lesicnik.wrench.ui.statistics
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lesicnik.wrench.ui.components.BottomBarHeight
-import com.lesicnik.wrench.ui.components.BottomBarWithFab
-import com.lesicnik.wrench.ui.components.BottomTab
-import com.lesicnik.wrench.ui.components.ErrorContent
-import com.lesicnik.wrench.ui.statistics.components.ChartsPage
-import com.lesicnik.wrench.ui.statistics.components.StatsPage
-import com.lesicnik.wrench.ui.statistics.components.TimePeriodSelector
+import com.lesicnik.wrench.ui.components.*
+import com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter
+import com.lesicnik.wrench.ui.statistics.components.*
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
-import kotlinx.coroutines.launch
+import java.text.NumberFormat
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.abs
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatisticsScreen(
     viewModel: StatisticsViewModel,
@@ -67,219 +34,130 @@ fun StatisticsScreen(
     onNavigateToCalendar: () -> Unit,
     onAddExpense: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val pagerState = rememberPagerState(pageCount = { 2 })
-    val coroutineScope = rememberCoroutineScope()
+    val state by viewModel.uiState.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    RefreshOnResumeEffect { viewModel.loadStatistics() }
+    ErrorSnackbarEffect(state.errorMessage, snackbar, viewModel::clearError)
+    StatisticsContent(state, vehicleName, odometerUnit, viewModel::selectPeriod,
+        { viewModel.loadStatistics(forceRefresh = true) }, onNavigateBack, { tab ->
+            when (tab) {
+                BottomTab.HOME -> onNavigateToHome()
+                BottomTab.EXPENSES -> onNavigateToExpenses()
+                BottomTab.CALENDAR -> onNavigateToCalendar()
+                else -> Unit
+            }
+        }, onAddExpense, snackbar)
+}
 
-    // Refresh statistics when screen resumes
-    RefreshOnResumeEffect(onResume = { viewModel.loadStatistics() })
-
-    ErrorSnackbarEffect(
-        errorMessage = uiState.errorMessage,
-        snackbarHostState = snackbarHostState,
-        onErrorConsumed = viewModel::clearError
-    )
-
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun StatisticsContent(
+    state: StatisticsUiState,
+    vehicleName: String,
+    odometerUnit: String,
+    onPeriod: (TimePeriod) -> Unit,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit,
+    onTab: (BottomTab) -> Unit,
+    onAdd: () -> Unit,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() }
+) {
+    val locale = LocalConfiguration.current.locales[0]
+    BackHandler(onBack = onBack)
+    var section by rememberSaveable { mutableIntStateOf(0) }
+    val money = rememberCurrencyFormatter()
+    val stats = state.keyStatistics
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = vehicleName,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+        topBar = { VehicleTopBar("Statistics", vehicleName, onBack) },
+        bottomBar = { VehicleNavigationBar(BottomTab.STATISTICS, onTab) },
+        floatingActionButton = { AddRecordButton(onClick = onAdd) },
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
+        PullToRefreshBox(isRefreshing = state.isLoading && stats != null, onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize().padding(padding)) {
+            LazyColumn(Modifier.fillMaxSize().testTag("statistics-list"),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                item { TimePeriodSelector(state.selectedPeriod, onPeriod) }
+                when {
+                    stats == null && state.isLoading -> item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                    stats == null -> item { ErrorContent("Couldn't load statistics", "Pull down to refresh or try again.", onRefresh) }
+                    stats.expenseCount == 0 -> item {
+                        Text("No expenses in this period", style = MaterialTheme.typography.titleMedium)
+                        Text("Choose a longer period or record your first expense.", style = MaterialTheme.typography.bodyMedium)
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding())
-        ) {
-            when {
-                uiState.isLoading && uiState.keyStatistics == null -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                uiState.errorMessage != null && uiState.keyStatistics == null -> {
-                    ErrorContent(
-                        title = "Failed to load statistics",
-                        message = uiState.errorMessage ?: "Unknown error",
-                        onRetry = { viewModel.loadStatistics(forceRefresh = true) },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-
-                else -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .navigationBarsPadding()
-                            .padding(bottom = BottomBarHeight)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Time period selector
-                        TimePeriodSelector(
-                            selectedPeriod = uiState.selectedPeriod,
-                            onPeriodSelected = { viewModel.selectPeriod(it) }
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Page indicator with labels and swipe hint
-                        PageIndicator(
-                            currentPage = pagerState.currentPage,
-                            onPageSelected = { page ->
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(page)
+                    else -> {
+                        item {
+                            InsightCard("What is this vehicle costing me?", money.format(stats.totalCost), "Total spent in this period") {
+                                state.spendingComparison?.let { comparison ->
+                                    val difference = comparison.current - comparison.previous
+                                    Text(when {
+                                        abs(difference) < 0.005 -> "Same spending as the previous period"
+                                        difference < 0 -> "${money.format(abs(difference))} less than the previous period"
+                                        else -> "${money.format(difference)} more than the previous period"
+                                    }, style = MaterialTheme.typography.bodyMedium)
+                                    val format = DateTimeFormatter.ofPattern("d MMM yyyy")
+                                    Text("Compared with ${comparison.previousStart.format(format)} – ${comparison.previousEnd.format(format)}",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Horizontal pager
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize()
-                        ) { page ->
-                            when (page) {
-                                0 -> ChartsPage(
-                                    expenseBreakdown = uiState.expenseBreakdown,
-                                    costTrends = uiState.costTrends,
-                                    fuelEconomyTrends = uiState.fuelEconomyTrends,
-                                    odometerTrends = uiState.odometerTrends,
-                                    odometerUnit = odometerUnit
-                                )
-                                1 -> StatsPage(
-                                    statistics = uiState.keyStatistics,
-                                    odometerUnit = odometerUnit
-                                )
+                        }
+                        item {
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                listOf("Spending", "Fuel", "Mileage").forEachIndexed { index, label ->
+                                    SegmentedButton(selected = section == index, onClick = { section = index },
+                                        shape = SegmentedButtonDefaults.itemShape(index, 3)) { Text(label) }
+                                }
+                            }
+                        }
+                        when (section) {
+                            0 -> {
+                                item { InsightCard("Cost per $odometerUnit", stats.averageCostPerKm?.let { money.format(it) } ?: "—",
+                                    "Based on recorded expenses and the odometer range") }
+                                item { ExpenseBreakdownChart(state.expenseBreakdown) }
+                                item { CostTrendsChart(state.costTrends) }
+                                item { Text("Monthly average: ${money.format(stats.averageMonthlyCost)}", style = MaterialTheme.typography.bodyMedium) }
+                            }
+                            1 -> {
+                                item {
+                                    InsightCard("How efficiently am I driving?", stats.averageFuelConsumption?.let {
+                                        String.format(locale, "%.1f L/100 km", it)
+                                    } ?: "—", "Average of recorded fill-up consumption") {
+                                        if (state.fuelEconomyTrends.size >= 2) {
+                                            val latest = state.fuelEconomyTrends.last().consumption
+                                            val previous = state.fuelEconomyTrends[state.fuelEconomyTrends.lastIndex - 1].consumption
+                                            val change = latest - previous
+                                            Text(String.format(locale, "Latest: %.1f L/100 km · %.1f %s than previous fill-up", latest,
+                                                abs(change), if (change <= 0) "lower" else "higher"), style = MaterialTheme.typography.bodyMedium)
+                                        } else Text("Consumption needs consecutive full fill-ups.", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                                item { FuelEconomyChart(state.fuelEconomyTrends) }
+                                item { Text("Fuel spending: ${money.format(stats.fuelCost)}", style = MaterialTheme.typography.bodyMedium) }
+                            }
+                            2 -> {
+                                item { InsightCard("How much am I driving?", stats.totalDistance?.let {
+                                    "${NumberFormat.getIntegerInstance().format(it)} $odometerUnit"
+                                } ?: "—", "Distance between recorded odometer readings in this period") }
+                                item { OdometerChart(state.odometerTrends, odometerUnit) }
+                                item { Text("${stats.expenseCount} recorded expenses in this period", style = MaterialTheme.typography.bodyMedium) }
                             }
                         }
                     }
                 }
             }
-
-            // Bottom bar overlaid on top of content
-            BottomBarWithFab(
-                selectedTab = BottomTab.STATISTICS,
-                onTabSelected = { tab ->
-                    when (tab) {
-                        BottomTab.HOME -> onNavigateToHome()
-                        BottomTab.EXPENSES -> onNavigateToExpenses()
-                        BottomTab.CALENDAR -> onNavigateToCalendar()
-                        else -> { /* TODO: Handle other tabs */ }
-                    }
-                },
-                onAddClick = onAddExpense,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
         }
     }
 }
 
 @Composable
-private fun PageIndicator(
-    currentPage: Int,
-    onPageSelected: (Int) -> Unit
-) {
-    val pages = listOf("Charts", "Stats")
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Left arrow hint (visible when on Stats page)
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-            contentDescription = "Swipe right for Charts",
-            tint = if (currentPage == 1)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-            modifier = Modifier.size(24.dp)
-        )
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Page tabs
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            pages.forEachIndexed { index, title ->
-                val isSelected = currentPage == index
-                val backgroundColor by animateColorAsState(
-                    targetValue = if (isSelected)
-                        MaterialTheme.colorScheme.primaryContainer
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant,
-                    label = "tabBackground"
-                )
-                val textColor by animateColorAsState(
-                    targetValue = if (isSelected)
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    label = "tabText"
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(backgroundColor)
-                        .clickable { onPageSelected(index) }
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = textColor
-                    )
-                }
-            }
+private fun InsightCard(title: String, value: String, explanation: String, content: @Composable ColumnScope.() -> Unit = {}) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = screenCardColors()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Text(explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            content()
         }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        // Right arrow hint (visible when on Charts page)
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "Swipe left for Stats",
-            tint = if (currentPage == 0)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-            modifier = Modifier.size(24.dp)
-        )
     }
 }

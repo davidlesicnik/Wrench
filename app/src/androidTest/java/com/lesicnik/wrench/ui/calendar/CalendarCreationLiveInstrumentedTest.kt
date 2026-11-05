@@ -61,7 +61,7 @@ class CalendarCreationLiveInstrumentedTest {
         try {
             compose.waitUntil(20_000) { compose.onAllNodesWithText("Test Test").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Test Test").performClick()
-            compose.onNodeWithText("Calendar").performClick()
+            compose.onNodeWithText("Maintenance").performClick()
             for (metric in listOf(ReminderMetric.ODOMETER, ReminderMetric.DATE, ReminderMetric.BOTH)) {
                 val index = ReminderMetric.entries.indexOf(metric)
                 compose.onNodeWithContentDescription("Add reminder").performClick()

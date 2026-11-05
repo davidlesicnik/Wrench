@@ -55,3 +55,11 @@ fun ReminderRecord.toReminder(): Reminder {
         tags = tags.orEmpty()
     )
 }
+
+/** Keep combined date/mileage reminders as a single task; urgency comes from LubeLogger. */
+fun maintenanceAgenda(reminders: List<Reminder>): List<Reminder> = reminders.sortedWith(
+    compareByDescending<Reminder> { it.urgency.rank }
+        .thenBy { it.dueDate ?: LocalDate.MAX }
+        .thenBy { it.dueDistance ?: Int.MAX_VALUE }
+        .thenBy { it.id }
+)

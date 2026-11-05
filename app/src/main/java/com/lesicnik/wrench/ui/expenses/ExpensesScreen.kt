@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.ui.expenses
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -70,8 +71,9 @@ import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.sync.ExpenseSyncState
-import com.lesicnik.wrench.ui.components.BottomBarWithFab
-import com.lesicnik.wrench.ui.components.BottomBarHeight
+import com.lesicnik.wrench.ui.components.VehicleTopBar
+import com.lesicnik.wrench.ui.components.VehicleNavigationBar
+import com.lesicnik.wrench.ui.components.AddRecordButton
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.EmptyContent
 import com.lesicnik.wrench.ui.components.ErrorContent
@@ -124,30 +126,7 @@ fun ExpensesScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("Expenses", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            text = vehicleName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                ),
+            VehicleTopBar("Expenses", vehicleName, onNavigateBack,
                 actions = {
                     IconButton(onClick = { showFilterSheet = true }) {
                         BadgedBox(
@@ -181,14 +160,23 @@ fun ExpensesScreen(
                 }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = { VehicleNavigationBar(BottomTab.EXPENSES) {
+            when (it) {
+                BottomTab.HOME -> onNavigateToHome()
+                BottomTab.STATISTICS -> onNavigateToStatistics()
+                BottomTab.CALENDAR -> onNavigateToCalendar()
+                else -> Unit
+            }
+        } },
+        floatingActionButton = { AddRecordButton { onAddExpense(uiState.expenses.mapNotNull { it.odometer }.maxOrNull()) } }
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding())
+                .padding(paddingValues)
         ) {
-            Column(Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = BottomBarHeight)) {
+            Column(Modifier.fillMaxSize()) {
             if (hasActiveFilters) {
                 Row(
                     Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp),
@@ -264,7 +252,7 @@ fun ExpensesScreen(
                             modifier = Modifier.fillMaxSize(),
                             state = listState,
                             contentPadding = PaddingValues(
-                                bottom = 24.dp
+                                bottom = 96.dp
                             )
                         ) {
                             monthOrder.forEach { month ->
@@ -302,21 +290,7 @@ fun ExpensesScreen(
 
             } // Expense list
 
-            // Bottom bar overlaid on top of content
-            val lastOdometer = uiState.expenses.maxByOrNull { it.date }?.odometer
-            BottomBarWithFab(
-                selectedTab = BottomTab.EXPENSES,
-                onTabSelected = { tab ->
-                    when (tab) {
-                        BottomTab.HOME -> onNavigateToHome()
-                        BottomTab.STATISTICS -> onNavigateToStatistics()
-                        BottomTab.CALENDAR -> onNavigateToCalendar()
-                        else -> { /* TODO: Handle other tabs */ }
-                    }
-                },
-                onAddClick = { onAddExpense(lastOdometer) },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+
         }
     }
 
@@ -441,14 +415,15 @@ private fun ExpenseRow(
     isLast: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMM") }
+    val locale = LocalConfiguration.current.locales[0]
+    val dateFormatter = remember(locale) { DateTimeFormatter.ofPattern("d MMM", locale) }
     val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
     val colors = MaterialTheme.colorScheme
     val isLight = colors.surface.luminance() > 0.5f
     val typeStyle = expense.type.getStyle()
     val fuelDetails = buildList {
-        expense.liters?.let { add(String.format(Locale.getDefault(), "%.2f L", it)) }
-        expense.fuelEconomy?.let { add(String.format(Locale.getDefault(), "%.1f L/100 km", it)) }
+        expense.liters?.let { add(String.format(locale, "%.2f L", it)) }
+        expense.fuelEconomy?.let { add(String.format(locale, "%.1f L/100 km", it)) }
         if (expense.isFillToFull == false) add("Partial fill")
         if (expense.isMissedFuelUp == true) add("Missed last")
     }
@@ -561,7 +536,8 @@ private fun MonthDivider(
     total: Double,
     modifier: Modifier = Modifier
 ) {
-    val monthFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy") }
+    val locale = LocalConfiguration.current.locales[0]
+    val monthFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMMM yyyy", locale) }
     val formatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Surface(
@@ -575,7 +551,7 @@ private fun MonthDivider(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                month.format(monthFormatter).uppercase(Locale.getDefault()),
+                month.format(monthFormatter).uppercase(locale),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.labelMedium,
                 letterSpacing = 1.sp,
@@ -650,7 +626,7 @@ private fun FilterBottomSheet(
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 96.dp)
         ) {
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,

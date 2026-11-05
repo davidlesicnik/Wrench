@@ -64,10 +64,14 @@ data class AddEditExpenseUiState(
 class AddEditExpenseViewModel(
     private val credentialsRepository: CredentialsRepository,
     private val expenseRepository: ExpenseRepository,
-    private val vehicleId: Int
+    private val vehicleId: Int,
+    serviceDescription: String = ""
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(AddEditExpenseUiState())
+    private val _uiState = MutableStateFlow(AddEditExpenseUiState(
+        expenseType = if (serviceDescription.isBlank()) ExpenseType.FUEL else ExpenseType.SERVICE,
+        description = serviceDescription
+    ))
     val uiState: StateFlow<AddEditExpenseUiState> = _uiState.asStateFlow()
 
     fun initializeForEdit(expenseId: Int, expenseType: ExpenseType) {
@@ -374,11 +378,12 @@ class AddEditExpenseViewModel(
     class Factory(
         private val credentialsRepository: CredentialsRepository,
         private val expenseRepository: ExpenseRepository,
-        private val vehicleId: Int
+        private val vehicleId: Int,
+        private val serviceDescription: String = ""
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AddEditExpenseViewModel(credentialsRepository, expenseRepository, vehicleId) as T
+            return AddEditExpenseViewModel(credentialsRepository, expenseRepository, vehicleId, serviceDescription) as T
         }
     }
 }

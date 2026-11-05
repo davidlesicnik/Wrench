@@ -11,7 +11,9 @@ data class HomeOverview(
     val thisMonthFuel: Double,
     val thisMonthOther: Double,
     val lastMonthFuel: Double,
-    val lastMonthOther: Double
+    val lastMonthOther: Double,
+    val previousMonthToDate: Double = 0.0,
+    val comparisonEnd: LocalDate = LocalDate.now().minusMonths(1)
 )
 
 internal fun buildHomeOverview(
@@ -32,6 +34,8 @@ internal fun buildHomeOverview(
         thisMonthFuel = current.filter { it.type == ExpenseType.FUEL }.sumOf { it.cost },
         thisMonthOther = current.filter { it.type != ExpenseType.FUEL }.sumOf { it.cost },
         lastMonthFuel = previous.filter { it.type == ExpenseType.FUEL }.sumOf { it.cost },
-        lastMonthOther = previous.filter { it.type != ExpenseType.FUEL }.sumOf { it.cost }
+        lastMonthOther = previous.filter { it.type != ExpenseType.FUEL }.sumOf { it.cost },
+        previousMonthToDate = previous.filter { it.date <= today.minusMonths(1) }.sumOf { it.cost },
+        comparisonEnd = today.minusMonths(1)
     )
 }

@@ -22,7 +22,6 @@ fun TimePeriodSelector(
     SingleChoiceSegmentedButtonRow(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
     ) {
         TimePeriod.entries.forEachIndexed { index, period ->
             SegmentedButton(
