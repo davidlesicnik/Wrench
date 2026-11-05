@@ -14,6 +14,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import com.lesicnik.wrench.ui.calendar.AddReminderScreen
+import com.lesicnik.wrench.ui.calendar.AddReminderViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -24,6 +27,11 @@ import com.lesicnik.wrench.data.preload.SessionPreloader
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
+import com.lesicnik.wrench.data.repository.ReminderRepository
+import com.lesicnik.wrench.data.repository.ReminderMetric
+import com.lesicnik.wrench.ui.calendar.CalendarScreen
+import com.lesicnik.wrench.ui.calendar.CalendarViewModel
+import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.data.repository.VehicleRepository
 import com.lesicnik.wrench.ui.expenses.AddEditExpenseScreen
 import com.lesicnik.wrench.ui.expenses.AddEditExpenseViewModel
@@ -79,6 +87,14 @@ sealed class Screen(val route: String) {
             return "expenses/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}?thisMonth=$thisMonth"
         }
     }
+    data object Calendar : Screen("calendar/{vehicleId}/{vehicleName}/{odometerUnit}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String): String =
+            "calendar/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}"
+    }
+    data object AddReminder : Screen("addReminder/{vehicleId}/{vehicleName}/{odometerUnit}/{initialDate}?metric={metric}") {
+        fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String, initialDate: LocalDate, metric: ReminderMetric): String =
+            "addReminder/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}/$initialDate?metric=${metric.name}"
+    }
     data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}") {
         fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?): String {
             return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}"
@@ -102,7 +118,8 @@ fun WrenchNavGraph(
     credentialsRepository: CredentialsRepository,
     vehicleRepository: VehicleRepository,
     expenseRepository: ExpenseRepository,
-    sessionPreloader: SessionPreloader
+    sessionPreloader: SessionPreloader,
+    reminderRepository: ReminderRepository
 ) {
     NavHost(
         navController = navController,
@@ -174,6 +191,12 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
+                onNavigateToCalendar = {
+                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                    }
+                },
                 animateEntry = navController.previousBackStackEntry?.destination?.route == Screen.Vehicles.route,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToExpenses = {
@@ -232,6 +255,12 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
+                onNavigateToCalendar = {
+                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateBack = {
                     navController.navigate(Screen.Vehicles.route) {
                         popUpTo(Screen.Vehicles.route) { inclusive = true }
@@ -248,6 +277,75 @@ fun WrenchNavGraph(
                 },
                 onEditExpense = { expense ->
                     navController.navigate(Screen.EditExpense.createRoute(vehicleId, odometerUnit, expense.id, expense.type))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.Calendar.route,
+            arguments = vehicleNavArguments(),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None }
+        ) { backStackEntry ->
+            val (vehicleId, vehicleName, odometerUnit) = backStackEntry.extractVehicleArgs() ?: return@composable
+            val viewModel: CalendarViewModel = viewModel(
+                factory = CalendarViewModel.Factory(credentialsRepository, reminderRepository, vehicleId)
+            )
+            CalendarScreen(
+                viewModel = viewModel,
+                vehicleName = vehicleName,
+                odometerUnit = odometerUnit,
+                onNavigateBack = {
+                    navController.navigate(Screen.Vehicles.route) {
+                        popUpTo(Screen.Vehicles.route) { inclusive = true }
+                    }
+                },
+                onTabSelected = { tab ->
+                    val route = when (tab) {
+                        BottomTab.HOME -> Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit)
+                        BottomTab.EXPENSES -> Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit)
+                        BottomTab.STATISTICS -> Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit)
+                        BottomTab.CALENDAR -> null
+                    }
+                    route?.let {
+                        navController.navigate(it) {
+                            popUpTo(Screen.Home.route) { inclusive = tab == BottomTab.HOME }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                createdLocation = backStackEntry.savedStateHandle.getStateFlow<String?>("createdReminder", null).collectAsState().value,
+                onCreationShown = { backStackEntry.savedStateHandle.set<String?>("createdReminder", null) },
+                onAddReminder = { date, metric ->
+                    navController.navigate(Screen.AddReminder.createRoute(vehicleId, vehicleName, odometerUnit, date, metric))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.AddReminder.route,
+            arguments = vehicleNavArguments() + listOf(
+                navArgument("initialDate") { type = NavType.StringType },
+                navArgument("metric") { type = NavType.StringType; defaultValue = ReminderMetric.ODOMETER.name }
+            ),
+            enterTransition = { slideInHorizontally(animationSpec = tween(200)) { it } },
+            exitTransition = { ExitTransition.None },
+            popExitTransition = { slideOutHorizontally(animationSpec = tween(200)) { it } }
+        ) { backStackEntry ->
+            val (vehicleId, vehicleName, odometerUnit) = backStackEntry.extractVehicleArgs() ?: return@composable
+            val initialDate = backStackEntry.arguments?.getString("initialDate")?.let(LocalDate::parse) ?: LocalDate.now()
+            val viewModel: AddReminderViewModel = viewModel(
+                factory = AddReminderViewModel.Factory(credentialsRepository, reminderRepository, vehicleId, initialDate,
+                    ReminderMetric.valueOf(backStackEntry.arguments?.getString("metric") ?: ReminderMetric.ODOMETER.name))
+            )
+            AddReminderScreen(
+                viewModel, vehicleName, odometerUnit,
+                onNavigateBack = { navController.popBackStack() },
+                onSaved = { location ->
+                    navController.previousBackStackEntry?.savedStateHandle?.set("createdReminder", location)
+                    navController.popBackStack()
                 }
             )
         }
@@ -356,6 +454,12 @@ fun WrenchNavGraph(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
+                onNavigateToCalendar = {
+                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
+                        popUpTo(Screen.Home.route)
+                        launchSingleTop = true
+                    }
+                },
                 onNavigateBack = {
                     navController.navigate(Screen.Vehicles.route) {
                         popUpTo(Screen.Vehicles.route) { inclusive = true }

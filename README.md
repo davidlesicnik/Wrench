@@ -15,6 +15,12 @@ Wrench is an Android companion app for [LubeLogger](https://github.com/hargata/l
 
 * **API Authentication:** Connect using the server URL and API key.
 * **Vehicle Overview:** View all of your vehicles.
+* **Maintenance Calendar:** Browse dated reminders by month or day, inspect reminder details,
+  and view mileage targets and overdue tasks. Add reminders with a date, odometer target,
+  or both, plus notes and tags. Mileage reminders default to a relative interval from the latest
+  recorded odometer, with presets and an exact-target option. Creation requires a connection
+  and an Editor/Manager API key.
+  Reminders are cached for offline viewing and refreshed at sign-in and during background sync.
 * **Expense Management:**
   * List existing expenses.
   * Add new entries.

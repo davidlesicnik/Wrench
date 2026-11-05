@@ -95,6 +95,7 @@ fun ExpensesScreen(
     onNavigateBack: () -> Unit,
     onNavigateToHome: () -> Unit,
     onNavigateToStatistics: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit,
     onEditExpense: (Expense) -> Unit
 ) {
@@ -309,6 +310,7 @@ fun ExpensesScreen(
                     when (tab) {
                         BottomTab.HOME -> onNavigateToHome()
                         BottomTab.STATISTICS -> onNavigateToStatistics()
+                        BottomTab.CALENDAR -> onNavigateToCalendar()
                         else -> { /* TODO: Handle other tabs */ }
                     }
                 },

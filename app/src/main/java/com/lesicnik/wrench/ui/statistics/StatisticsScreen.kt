@@ -64,6 +64,7 @@ fun StatisticsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToHome: () -> Unit,
     onNavigateToExpenses: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
     onAddExpense: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -189,6 +190,7 @@ fun StatisticsScreen(
                     when (tab) {
                         BottomTab.HOME -> onNavigateToHome()
                         BottomTab.EXPENSES -> onNavigateToExpenses()
+                        BottomTab.CALENDAR -> onNavigateToCalendar()
                         else -> { /* TODO: Handle other tabs */ }
                     }
                 },

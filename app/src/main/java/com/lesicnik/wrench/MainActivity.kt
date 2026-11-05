@@ -11,6 +11,10 @@ import coil.request.ImageRequest
 import com.lesicnik.wrench.data.preload.SessionPreloader
 import com.lesicnik.wrench.data.remote.photoUrl
 import com.lesicnik.wrench.data.local.WrenchDatabase
+import com.lesicnik.wrench.data.repository.ReminderRepository
+import com.lesicnik.wrench.data.repository.Credentials
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
@@ -33,10 +37,20 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private val reminderRepository by lazy { ReminderRepository(database) }
+
     private val sessionPreloader by lazy {
         SessionPreloader(
             scope = lifecycleScope,
-            preloadData = expenseRepository::preloadSessionData,
+            preloadData = { serverUrl, apiKey, vehicleIds ->
+                coroutineScope {
+                    launch { expenseRepository.preloadSessionData(serverUrl, apiKey, vehicleIds) }
+                    launch {
+                        val credentials = Credentials(serverUrl, apiKey)
+                        vehicleIds.forEach { reminderRepository.refresh(credentials, it) }
+                    }
+                }
+            },
             preloadPhoto = { serverUrl, apiKey, vehicle ->
                 vehicle.photoUrl(serverUrl)?.let { url ->
                     applicationContext.imageLoader.execute(
@@ -65,7 +79,8 @@ class MainActivity : ComponentActivity() {
                         credentialsRepository = credentialsRepository,
                         vehicleRepository = vehicleRepository,
                         expenseRepository = expenseRepository,
-                        sessionPreloader = sessionPreloader
+                        sessionPreloader = sessionPreloader,
+                        reminderRepository = reminderRepository
                     )
                 }
             }

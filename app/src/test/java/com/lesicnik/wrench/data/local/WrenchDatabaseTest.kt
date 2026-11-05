@@ -1,6 +1,7 @@
 package com.lesicnik.wrench.data.local
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
@@ -35,6 +36,23 @@ class WrenchDatabaseTest {
     fun tearDown() {
         database.close()
         context.deleteDatabase(DATABASE_NAME)
+    }
+
+    @Test
+    fun `calendar migration preserves existing offline expenses and pending uploads`() = runBlocking {
+        val localId = database.expenseDao().insertExpense(expense()).toInt()
+        database.pendingSyncOpDao().insertOperation(operation(localId))
+        database.close()
+        // Recreate the v1 schema by removing only the new calendar tables.
+        SQLiteDatabase.openDatabase(context.getDatabasePath(DATABASE_NAME).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("DROP TABLE reminders")
+            it.execSQL("DROP TABLE reminder_sync")
+            it.version = 1
+        }
+        database = openDatabase()
+        assertEquals(expense().copy(localId = localId), database.expenseDao().getByLocalId(localId))
+        assertEquals(1, database.pendingSyncOpDao().countPending(SERVER_URL))
+        assertTrue(database.reminderDao().getReminders("account", 1).isEmpty())
     }
 
     @Test
@@ -77,7 +95,8 @@ class WrenchDatabaseTest {
     }
 
     private fun openDatabase(): WrenchDatabase =
-        Room.databaseBuilder(context, WrenchDatabase::class.java, DATABASE_NAME).build()
+        Room.databaseBuilder(context, WrenchDatabase::class.java, DATABASE_NAME)
+            .addMigrations(WrenchDatabase.MIGRATION_1_2).build()
 
     private fun expense() = ExpenseEntity(
         serverUrl = SERVER_URL,

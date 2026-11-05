@@ -52,6 +52,7 @@ fun HomeScreen(
     onNavigateBack: () -> Unit,
     onNavigateToExpenses: () -> Unit,
     onNavigateToStatistics: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
     onMonthlyExpenses: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit,
     onOpenExpense: (Expense) -> Unit,
@@ -124,6 +125,7 @@ fun HomeScreen(
                     when (it) {
                         BottomTab.EXPENSES -> onNavigateToExpenses()
                         BottomTab.STATISTICS -> onNavigateToStatistics()
+                        BottomTab.CALENDAR -> onNavigateToCalendar()
                         else -> Unit
                     }
                 },
