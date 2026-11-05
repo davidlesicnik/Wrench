@@ -11,10 +11,37 @@ import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Query
 
 interface LubeLoggerApi {
+
+    @GET("api/vehicle/odometerrecords/latest")
+    suspend fun getLatestOdometer(
+        @Header("x-api-key") apiKey: String,
+        @Query("vehicleId") vehicleId: Int
+    ): Response<Int>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/reminders/add")
+    suspend fun addReminder(
+        @Header("x-api-key") apiKey: String,
+        @Query("vehicleId") vehicleId: Int,
+        @Field("description") description: String,
+        @Field("metric") metric: String,
+        @Field("dueDate") dueDate: String?,
+        @Field("dueOdometer") dueOdometer: Int?,
+        @Field("notes") notes: String,
+        @Field("tags") tags: String
+    ): Response<ReminderWriteResponse>
+
+    @Headers("culture-invariant: true")
+    @GET("api/vehicle/reminders")
+    suspend fun getReminders(
+        @Header("x-api-key") apiKey: String,
+        @Query("vehicleId") vehicleId: Int
+    ): Response<List<ReminderRecord>>
 
     @GET("api/vehicles")
     suspend fun getVehicles(

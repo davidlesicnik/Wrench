@@ -95,7 +95,8 @@ fun BottomBarWithFab(
     selectedTab: BottomTab,
     onTabSelected: (BottomTab) -> Unit,
     onAddClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    addContentDescription: String = "Add Expense"
 ) {
     val fabRadiusPx = with(LocalDensity.current) { FabRadius.toPx() }
     val cutoutMarginPx = with(LocalDensity.current) { 8.dp.toPx() }
@@ -166,7 +167,7 @@ fun BottomBarWithFab(
         ) {
             Icon(
                 imageVector = Icons.Default.Add,
-                contentDescription = "Add Expense"
+                contentDescription = addContentDescription
             )
         }
     }

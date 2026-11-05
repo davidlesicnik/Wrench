@@ -62,4 +62,12 @@ object NetworkModule {
         retrofit = null
         lubeLoggerApi = null
     }
+
+    /** Reminder creation has no idempotency key, so never replay a failed POST automatically. */
+    fun getWriteApi(baseUrl: String): LubeLoggerApi = Retrofit.Builder()
+        .baseUrl(baseUrl.trimEnd('/') + "/")
+        .client(okHttpClient.newBuilder().retryOnConnectionFailure(false).build())
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+        .create(LubeLoggerApi::class.java)
 }
