@@ -95,9 +95,9 @@ sealed class Screen(val route: String) {
         fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String, initialDate: LocalDate, metric: ReminderMetric): String =
             "addReminder/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}/$initialDate?metric=${metric.name}"
     }
-    data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}") {
-        fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?): String {
-            return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}"
+    data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}?service={service}") {
+        fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?, service: String = ""): String {
+            return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}?service=${Uri.encode(service)}"
         }
     }
     data object EditExpense : Screen("editExpense/{vehicleId}/{odometerUnit}/{expenseId}/{expenseType}") {
@@ -183,7 +183,8 @@ fun WrenchNavGraph(
                 factory = HomeViewModel.Factory(
                     credentialsRepository = credentialsRepository,
                     expenseRepository = expenseRepository,
-                    vehicleId = vehicleId
+                    vehicleId = vehicleId,
+                    reminderRepository = reminderRepository
                 )
             )
 
@@ -192,23 +193,20 @@ fun WrenchNavGraph(
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
                 onNavigateToCalendar = {
-                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                    }
+                    navController.navigateVehicleTab(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 animateEntry = navController.previousBackStackEntry?.destination?.route == Screen.Vehicles.route,
-                onNavigateBack = { navController.popBackStack() },
+                onNavigateBack = { navController.leaveVehicle() },
                 onNavigateToExpenses = {
-                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
+                    navController.navigateVehicleTab(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onNavigateToStatistics = {
-                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
+                    navController.navigateVehicleTab(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onMonthlyExpenses = {
                     navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit, thisMonth = true))
                 },
-                onOpenExpense = { expense ->
+                onEditExpense = { expense ->
                     navController.navigate(Screen.EditExpense.createRoute(vehicleId, odometerUnit, expense.id, expense.type))
                 },
                 onAddExpense = { lastOdometer ->
@@ -256,21 +254,16 @@ fun WrenchNavGraph(
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
                 onNavigateToCalendar = {
-                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                    }
+                    navController.navigateVehicleTab(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onNavigateBack = {
-                    navController.navigate(Screen.Vehicles.route) {
-                        popUpTo(Screen.Vehicles.route) { inclusive = true }
-                    }
+                    navController.leaveVehicle()
                 },
-                onNavigateToHome = { navController.popBackStack() },
+                onNavigateToHome = {
+                    navController.navigateVehicleTab(Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit))
+                },
                 onNavigateToStatistics = {
-                    navController.navigate(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Expenses.route) { inclusive = true }
-                    }
+                    navController.navigateVehicleTab(Screen.Statistics.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onAddExpense = { lastOdometer ->
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
@@ -298,9 +291,7 @@ fun WrenchNavGraph(
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
                 onNavigateBack = {
-                    navController.navigate(Screen.Vehicles.route) {
-                        popUpTo(Screen.Vehicles.route) { inclusive = true }
-                    }
+                    navController.leaveVehicle()
                 },
                 onTabSelected = { tab ->
                     val route = when (tab) {
@@ -310,16 +301,17 @@ fun WrenchNavGraph(
                         BottomTab.CALENDAR -> null
                     }
                     route?.let {
-                        navController.navigate(it) {
-                            popUpTo(Screen.Home.route) { inclusive = tab == BottomTab.HOME }
-                            launchSingleTop = true
-                        }
+                        navController.navigateVehicleTab(it)
                     }
                 },
                 createdLocation = backStackEntry.savedStateHandle.getStateFlow<String?>("createdReminder", null).collectAsState().value,
                 onCreationShown = { backStackEntry.savedStateHandle.set<String?>("createdReminder", null) },
                 onAddReminder = { date, metric ->
                     navController.navigate(Screen.AddReminder.createRoute(vehicleId, vehicleName, odometerUnit, date, metric))
+                },
+                onRecordService = { reminder ->
+                    val lastOdometer = expenseRepository.getCachedExpenses(vehicleId)?.mapNotNull { it.odometer }?.maxOrNull()
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer, reminder.description))
                 }
             )
         }
@@ -355,7 +347,8 @@ fun WrenchNavGraph(
             arguments = listOf(
                 navArgument("vehicleId") { type = NavType.IntType },
                 navArgument("odometerUnit") { type = NavType.StringType },
-                navArgument("lastOdometer") { type = NavType.IntType }
+                navArgument("lastOdometer") { type = NavType.IntType },
+                navArgument("service") { type = NavType.StringType; defaultValue = "" }
             ),
             enterTransition = { slideInHorizontally(animationSpec = tween(200)) { it } },
             exitTransition = { ExitTransition.None },
@@ -370,13 +363,15 @@ fun WrenchNavGraph(
                 factory = AddEditExpenseViewModel.Factory(
                     credentialsRepository = credentialsRepository,
                     expenseRepository = expenseRepository,
-                    vehicleId = vehicleId
+                    vehicleId = vehicleId,
+                    serviceDescription = backStackEntry.arguments?.getString("service").orEmpty()
                 )
             )
 
             AddEditExpenseScreen(
                 viewModel = viewModel,
                 odometerUnit = odometerUnit,
+                vehicleName = navController.previousBackStackEntry?.arguments?.getString("vehicleName").orEmpty(),
                 lastOdometer = lastOdometer,
                 onNavigateBack = { navController.popBackStack() },
                 onExpenseSaved = { navController.popBackStack() }
@@ -418,6 +413,7 @@ fun WrenchNavGraph(
             AddEditExpenseScreen(
                 viewModel = viewModel,
                 odometerUnit = odometerUnit,
+                vehicleName = navController.previousBackStackEntry?.arguments?.getString("vehicleName").orEmpty(),
                 onNavigateBack = { navController.popBackStack() },
                 onExpenseSaved = { navController.popBackStack() }
             )
@@ -448,32 +444,23 @@ fun WrenchNavGraph(
 
             // Get last odometer from cached expenses for add expense navigation
             val lastOdometer = expenseRepository.getCachedExpenses(vehicleId)
-                ?.firstNotNullOfOrNull { it.odometer }
+                ?.mapNotNull { it.odometer }?.maxOrNull()
 
             StatisticsScreen(
                 viewModel = viewModel,
                 vehicleName = vehicleName,
                 odometerUnit = odometerUnit,
                 onNavigateToCalendar = {
-                    navController.navigate(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Home.route)
-                        launchSingleTop = true
-                    }
+                    navController.navigateVehicleTab(Screen.Calendar.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onNavigateBack = {
-                    navController.navigate(Screen.Vehicles.route) {
-                        popUpTo(Screen.Vehicles.route) { inclusive = true }
-                    }
+                    navController.leaveVehicle()
                 },
                 onNavigateToHome = {
-                    navController.navigate(Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Statistics.route) { inclusive = true }
-                    }
+                    navController.navigateVehicleTab(Screen.Home.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onNavigateToExpenses = {
-                    navController.navigate(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit)) {
-                        popUpTo(Screen.Statistics.route) { inclusive = true }
-                    }
+                    navController.navigateVehicleTab(Screen.Expenses.createRoute(vehicleId, vehicleName, odometerUnit))
                 },
                 onAddExpense = {
                     navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer))
@@ -481,4 +468,24 @@ fun WrenchNavGraph(
             )
         }
     }
+}
+
+internal fun NavHostController.navigateVehicleTab(route: String) {
+    navigate(route) {
+        popUpTo(Screen.Home.route) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+internal fun NavHostController.clearVehicleTabState() {
+    listOf(Screen.Expenses.route, Screen.Statistics.route, Screen.Calendar.route).forEach { route ->
+        graph.findNode(route)?.let { clearBackStack(it.id) }
+    }
+}
+
+internal fun NavHostController.leaveVehicle() {
+    // Drop saved vehicle tabs before returning to the garage.
+    clearVehicleTabState()
+    popBackStack(Screen.Vehicles.route, false)
 }

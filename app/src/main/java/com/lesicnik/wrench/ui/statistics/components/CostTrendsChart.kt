@@ -1,5 +1,7 @@
 package com.lesicnik.wrench.ui.statistics.components
 
+import com.lesicnik.wrench.ui.components.screenCardColors
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.lazy.LazyRow
@@ -31,7 +33,8 @@ fun CostTrendsChart(trends: List<CostTrendPoint>, modifier: Modifier = Modifier)
     val grid = MaterialTheme.colorScheme.outlineVariant
     val selectionColor = MaterialTheme.colorScheme.onSurface
     var selected by remember(trends) { mutableStateOf(trends.lastIndex.coerceAtLeast(0)) }
-    Card(modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+    Card(modifier.fillMaxWidth(), colors = screenCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Cost Trends ($currencyCode)", style = MaterialTheme.typography.titleMedium)
             if (trends.isEmpty() || trends.all { it.fuelCost == 0.0 && it.otherCost == 0.0 }) {

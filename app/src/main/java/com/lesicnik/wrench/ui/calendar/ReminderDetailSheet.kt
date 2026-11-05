@@ -23,7 +23,7 @@ import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalDate, onDismiss: () -> Unit, onManage: (() -> Unit)?) {
+internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalDate, onDismiss: () -> Unit, onManage: (() -> Unit)?, onRecordService: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -57,6 +57,11 @@ internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalD
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+            if (onRecordService != null) {
+                Button(onClick = onRecordService, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Record service") }
+                Text("Log the work as an expense, then complete or reschedule this reminder in LubeLogger.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (onManage != null) {
                 OutlinedButton(onClick = onManage, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

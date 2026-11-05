@@ -1,5 +1,7 @@
 package com.lesicnik.wrench.ui.statistics.components
 
+import com.lesicnik.wrench.ui.components.screenCardColors
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -45,7 +47,8 @@ fun OdometerChart(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = screenCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)

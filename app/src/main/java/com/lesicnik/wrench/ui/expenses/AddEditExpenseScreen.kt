@@ -2,91 +2,42 @@ package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.border
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.ui.semantics.Role
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Notes
-import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.LocalGasStation
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.ExpenseType
+import com.lesicnik.wrench.ui.components.VehicleTopBar
+import com.lesicnik.wrench.ui.settings.LocalAppPreferences
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
-import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
-import com.lesicnik.wrench.ui.utils.rememberKeyboardVisibility
 import java.text.NumberFormat
 import java.time.Instant
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,469 +46,146 @@ fun AddEditExpenseScreen(
     odometerUnit: String = "km",
     lastOdometer: Int? = null,
     onNavigateBack: () -> Unit,
-    onExpenseSaved: () -> Unit
+    onExpenseSaved: () -> Unit,
+    vehicleName: String = ""
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val focusManager = LocalFocusManager.current
-    val hapticFeedback = LocalHapticFeedback.current
-    val currencyCode = com.lesicnik.wrench.ui.settings.LocalAppPreferences.current.currencyCode
-    var showDatePicker by remember { mutableStateOf(false) }
-    val isKeyboardOpen by rememberKeyboardVisibility()
-    val nextFieldKeyboardActions = KeyboardActions(
-        onNext = { focusManager.moveFocus(FocusDirection.Down) }
-    )
-    val standardFieldModifier = Modifier
-        .fillMaxWidth()
-        .padding(top = 16.dp)
-
-    // Detect compact screen (e.g., Galaxy Flip cover screen ~524dp)
-    val configuration = LocalConfiguration.current
-    val isCompactScreen = configuration.screenHeightDp < 550
-
-    val expenseTypeOrder = remember {
-        listOf(
-            ExpenseType.FUEL,
-            ExpenseType.SERVICE,
-            ExpenseType.REPAIR,
-            ExpenseType.UPGRADE,
-            ExpenseType.TAX
-        )
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var showNotes by rememberSaveable { mutableStateOf(false) }
+    var showFuelOptions by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(uiState.isEditMode) {
+        if (uiState.notes.isNotBlank()) showNotes = true
+        if (uiState.isMissedFuelUp) showFuelOptions = true
     }
-
-    // Get color for current expense type
-    val currentTypeColor = remember(uiState.expenseType) {
-        uiState.expenseType.color
-    }
-
-    // Animated button color
-    val animatedButtonColor by animateColorAsState(
-        targetValue = currentTypeColor,
-        animationSpec = tween(durationMillis = 300),
-        label = "buttonColor"
-    )
-
-    // Handle back button with discard dialog
-    BackHandler {
-        if (uiState.isDirty) {
-            viewModel.showDiscardDialog()
-        } else {
-            onNavigateBack()
-        }
-    }
-
-    LaunchedEffect(uiState.isSaved) {
-        if (uiState.isSaved) {
-            onExpenseSaved()
-        }
-    }
-
-    LaunchedEffect(uiState.isDeleted) {
-        if (uiState.isDeleted) {
-            onNavigateBack()
-        }
-    }
-
-    ErrorSnackbarEffect(
-        errorMessage = uiState.errorMessage,
-        snackbarHostState = snackbarHostState,
-        onErrorConsumed = viewModel::clearError
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
+    val enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict
+    val back = { if (uiState.isDirty) viewModel.showDiscardDialog() else onNavigateBack() }
+    BackHandler { if (enabled) back() }
+    LaunchedEffect(uiState.isSaved) { if (uiState.isSaved) onExpenseSaved() }
+    LaunchedEffect(uiState.isDeleted) { if (uiState.isDeleted) onNavigateBack() }
+    ErrorSnackbarEffect(uiState.errorMessage, snackbarHostState, viewModel::clearError)
+    val next = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+    val finish = KeyboardActions(onDone = { focusManager.clearFocus() })
+    val fieldModifier = Modifier.fillMaxWidth()
+    val currencyCode = LocalAppPreferences.current.currencyCode
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (uiState.isEditMode) "Edit Expense" else "Add Expense") },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (uiState.isDirty) {
-                            viewModel.showDiscardDialog()
-                        } else {
-                            onNavigateBack()
+        modifier = Modifier.imePadding(),
+        topBar = { VehicleTopBar(if (uiState.isEditMode) "Edit expense" else "Add expense", vehicleName, { if (enabled) back() }) {
+            if (uiState.isEditMode) IconButton(onClick = viewModel::showDeleteDialog, enabled = enabled) {
+                Icon(Icons.Default.Delete, "Delete expense", tint = MaterialTheme.colorScheme.error)
+            }
+        } },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!uiState.isEditMode) {
+                        Row(Modifier.fillMaxWidth().testTag("expense-type-selector").selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf(ExpenseType.FUEL, ExpenseType.SERVICE, ExpenseType.REPAIR, ExpenseType.UPGRADE, ExpenseType.TAX).forEach { type ->
+                                val style = type.getStyle()
+                                val selected = uiState.expenseType == type
+                                Surface(modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).selectable(
+                                    selected = selected, enabled = enabled, role = Role.RadioButton,
+                                    onClick = { viewModel.onExpenseTypeChanged(type) }),
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (selected) style.color.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow) {
+                                    Column(Modifier.heightIn(min = 64.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(style.icon, null, tint = if (selected) style.color else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(style.label, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                                    }
+                                }
+                            }
                         }
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
                     }
-                },
-                actions = {
-                    if (uiState.isEditMode) {
-                        IconButton(
-                            onClick = { viewModel.showDeleteDialog() },
-                            enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+                    Button(onClick = { focusManager.clearFocus(); viewModel.saveExpense() }, enabled = enabled,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        if (uiState.isLoading) CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary)
+                        Text(if (uiState.isLoading) "Saving…" else if (uiState.isEditMode) "Save changes" else "Save ${uiState.expenseType.getStyle().label.lowercase()}")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .imePadding()
-        ) {
-            // Scrollable Form Fields
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(if (isCompactScreen) 8.dp else 16.dp)
-            ) {
-                // Form Fields
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    // Date Field
-                    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d, yyyy") }
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = uiState.date.format(dateFormatter),
-                            onValueChange = { },
-                            label = { Text("Date") },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = null
-                                )
-                            },
-                            readOnly = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        // Clickable overlay
-                        Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .clickable(enabled = !uiState.isLoading) { showDatePicker = true }
-                        )
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp).testTag("expense-form"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CalendarMonth, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { focusManager.clearFocus(); showDatePicker = true }, enabled = enabled) {
+                    Text((if (uiState.date == LocalDate.now()) "Today · " else "") + uiState.date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)))
+                }
+                Spacer(Modifier.weight(1f))
+                if (uiState.date != LocalDate.now()) TextButton(onClick = { viewModel.onDateChanged(LocalDate.now()) }, enabled = enabled) { Text("Today") }
+            }
+            if (uiState.expenseType != ExpenseType.FUEL) OutlinedTextField(
+                value = uiState.description, onValueChange = viewModel::onDescriptionChanged,
+                label = { Text("Description") }, modifier = fieldModifier.testTag("expense-description"), enabled = enabled, singleLine = true,
+                isError = uiState.fieldErrors["description"] != null,
+                supportingText = uiState.fieldErrors["description"]?.let { error -> { Text(error) } },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = next)
+            if (uiState.expenseType != ExpenseType.TAX) OutlinedTextField(
+                value = uiState.odometer, onValueChange = viewModel::onOdometerChanged,
+                label = { Text("Odometer") }, suffix = { Text(odometerUnit) }, enabled = enabled, singleLine = true,
+                modifier = fieldModifier.testTag("expense-odometer"), isError = uiState.fieldErrors["odometer"] != null,
+                supportingText = { (uiState.fieldErrors["odometer"] ?: lastOdometer?.let {
+                    "Previous: ${NumberFormat.getIntegerInstance().format(it)} $odometerUnit"
+                })?.let { Text(it) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), keyboardActions = next)
+            if (uiState.expenseType == ExpenseType.FUEL) OutlinedTextField(
+                value = uiState.fuelConsumed, onValueChange = viewModel::onFuelConsumedChanged,
+                label = { Text("Fuel amount") }, suffix = { Text("L") }, enabled = enabled, singleLine = true,
+                modifier = fieldModifier.testTag("expense-fuel"), isError = uiState.fieldErrors["fuel"] != null,
+                supportingText = uiState.fieldErrors["fuel"]?.let { error -> { Text(error) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), keyboardActions = next)
+            OutlinedTextField(value = uiState.cost, onValueChange = viewModel::onCostChanged,
+                label = { Text("Total paid") }, suffix = { Text(currencyCode) }, enabled = enabled, singleLine = true,
+                modifier = fieldModifier.testTag("expense-cost"), isError = uiState.fieldErrors["cost"] != null,
+                supportingText = uiState.fieldErrors["cost"]?.let { error -> { Text(error) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = if (showNotes) ImeAction.Next else ImeAction.Done),
+                keyboardActions = if (showNotes) next else finish)
+            if (uiState.expenseType == ExpenseType.FUEL) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).toggleable(value = uiState.isFillToFull, enabled = enabled, role = Role.Switch, onValueChange = viewModel::onFillToFullChanged).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Full tank", style = MaterialTheme.typography.bodyLarge)
+                        Text("Filled completely at this stop", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-
-                    // Odometer (not for TAX)
-                    AnimatedVisibility(visible = uiState.expenseType != ExpenseType.TAX) {
-                        OutlinedTextField(
-                            value = uiState.odometer,
-                            onValueChange = viewModel::onOdometerChanged,
-                            label = { Text("Odometer ($odometerUnit)") },
-                            isError = uiState.fieldErrors["odometer"] != null,
-                            supportingText = {
-                                Text(uiState.fieldErrors["odometer"] ?: lastOdometer?.let {
-                                    "Previous reading: ${NumberFormat.getNumberInstance().format(it)} $odometerUnit"
-                                } ?: "Odometer reading at the time of this expense")
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Speed,
-                                    contentDescription = null
-                                )
-                            },
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = nextFieldKeyboardActions,
-                            singleLine = true,
-                            modifier = standardFieldModifier,
-                            enabled = !uiState.isLoading
-                        )
-                    }
-
-                    // Fuel-specific fields
-                    AnimatedVisibility(visible = uiState.expenseType == ExpenseType.FUEL) {
-                        Column {
-                            // Fuel amount with decimal keyboard input
-                            OutlinedTextField(
-                                value = uiState.fuelConsumed,
-                                onValueChange = viewModel::onFuelConsumedChanged,
-                                label = { Text("Fuel Amount (L)") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.LocalGasStation,
-                                        contentDescription = null
-                                    )
-                                },
-                                isError = uiState.fieldErrors["fuel"] != null,
-                                supportingText = { Text(uiState.fieldErrors["fuel"] ?: "Litres, for example 52.13") },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Decimal,
-                                    imeAction = ImeAction.Next
-                                ),
-                                keyboardActions = nextFieldKeyboardActions,
-                                singleLine = true,
-                                modifier = standardFieldModifier,
-                                enabled = !uiState.isLoading
-                            )
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable(enabled = !uiState.isLoading) {
-                                            viewModel.onFillToFullChanged(!uiState.isFillToFull)
-                                        }
-                                        .padding(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = uiState.isFillToFull,
-                                        onCheckedChange = null,
-                                        enabled = !uiState.isLoading
-                                    )
-                                    Text(
-                                        text = "Fill to full",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable(enabled = !uiState.isLoading) {
-                                            viewModel.onMissedFuelUpChanged(!uiState.isMissedFuelUp)
-                                        }
-                                        .padding(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = uiState.isMissedFuelUp,
-                                        onCheckedChange = null,
-                                        enabled = !uiState.isLoading
-                                    )
-                                    Text(
-                                        text = "Missed a fill-up",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                }
-                            }
+                    Switch(checked = uiState.isFillToFull, onCheckedChange = null, enabled = enabled)
+                }
+                TextButton(onClick = { focusManager.clearFocus(); showFuelOptions = !showFuelOptions }, enabled = enabled) {
+                    Text("Fill-up options")
+                    Icon(if (showFuelOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                }
+                AnimatedVisibility(showFuelOptions) {
+                    Column {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = uiState.isMissedFuelUp, onCheckedChange = viewModel::onMissedFuelUpChanged, enabled = enabled)
+                            Text("Previous fill-up not recorded")
                         }
+                        Text("Use this if you skipped recording a stop. Consumption won't be calculated across that gap.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-
-                    if (uiState.expenseType == ExpenseType.FUEL) {
-                        Text(
-                            "Fill to full: the tank was filled completely. Missed a fill-up: a previous stop was not recorded, so consumption cannot be calculated reliably.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                    // Description (not for FUEL)
-                    AnimatedVisibility(visible = uiState.expenseType != ExpenseType.FUEL) {
-                        OutlinedTextField(
-                            value = uiState.description,
-                            onValueChange = viewModel::onDescriptionChanged,
-                            label = { Text("Description") },
-                            isError = uiState.fieldErrors["description"] != null,
-                            supportingText = { uiState.fieldErrors["description"]?.let { Text(it) } },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Description,
-                                    contentDescription = null
-                                )
-                            },
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = nextFieldKeyboardActions,
-                            singleLine = true,
-                            modifier = standardFieldModifier,
-                            enabled = !uiState.isLoading
-                        )
-                    }
-
-                    // Cost with decimal keyboard input
-                    OutlinedTextField(
-                        value = uiState.cost,
-                        onValueChange = viewModel::onCostChanged,
-                        label = { Text("Cost ($currencyCode)") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Payments,
-                                contentDescription = null
-                            )
-                        },
-                        isError = uiState.fieldErrors["cost"] != null,
-                        supportingText = { Text(uiState.fieldErrors["cost"] ?: "Total paid, for example 84.82") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = nextFieldKeyboardActions,
-                        singleLine = true,
-                        modifier = standardFieldModifier,
-                        enabled = !uiState.isLoading
-                    )
-
-                    // Tax-specific: Is Recurring
-                    AnimatedVisibility(visible = uiState.expenseType == ExpenseType.TAX) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = uiState.isRecurring,
-                                onCheckedChange = viewModel::onRecurringChanged,
-                                enabled = !uiState.isLoading
-                            )
-                            Text(
-                                text = "Recurring expense",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
-
-                    // Notes
-                    OutlinedTextField(
-                        value = uiState.notes,
-                        onValueChange = viewModel::onNotesChanged,
-                        label = { Text("Notes (optional)") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Notes,
-                                contentDescription = null
-                            )
-                        },
-                        keyboardOptions = KeyboardOptions(
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focusManager.clearFocus()
-                            }
-                        ),
-                        minLines = 2,
-                        maxLines = 4,
-                        modifier = standardFieldModifier,
-                        enabled = !uiState.isLoading
-                    )
                 }
             }
+            if (uiState.expenseType == ExpenseType.TAX) Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = uiState.isRecurring, onCheckedChange = viewModel::onRecurringChanged, enabled = enabled)
+                Text("Recurring expense")
             }
-
-            // Bottom pinned section
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(if (isCompactScreen) 8.dp else 16.dp),
-                verticalArrangement = Arrangement.spacedBy(if (isCompactScreen) 8.dp else 16.dp)
-            ) {
-                if (!uiState.isEditMode) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
-                            .padding(6.dp)
-                            .selectableGroup(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        expenseTypeOrder.forEach { type ->
-                            val selected = uiState.expenseType == type
-                            val style = type.getStyle()
-                            val tileColor by animateColorAsState(
-                                targetValue = if (selected) style.color.copy(alpha = 0.14f) else Color.Transparent,
-                                animationSpec = tween(180),
-                                label = "typeBackground"
-                            )
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .background(tileColor)
-                                    .border(1.dp, if (selected) style.color.copy(alpha = 0.35f) else Color.Transparent, RoundedCornerShape(18.dp))
-                                    .selectable(
-                                        selected = selected,
-                                        enabled = !uiState.isLoading,
-                                        role = Role.RadioButton,
-                                        onClick = {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            viewModel.onExpenseTypeChanged(type)
-                                        }
-                                    )
-                                    .heightIn(min = 72.dp)
-                                    .padding(vertical = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
-                            ) {
-                                Box(
-                                    modifier = Modifier.size(32.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(style.icon, contentDescription = null,
-                                        tint = if (selected) style.color else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(24.dp))
-                                }
-                                Text(style.label, style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-
-                // Save Button with animated color
-                Button(
-                    onClick = { viewModel.saveExpense() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = animatedButtonColor
-                    )
-                ) {
-                    AnimatedVisibility(visible = uiState.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .padding(end = 8.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    }
-                    Text(
-                        text = when {
-                            uiState.isLoading -> if (uiState.isEditMode) "Updating…" else "Saving…"
-                            uiState.isEditMode -> "Update ${uiState.expenseType.getStyle().label} Expense"
-                            else -> "Save ${uiState.expenseType.getStyle().label} Expense"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                }
+            TextButton(onClick = { focusManager.clearFocus(); showNotes = !showNotes }, enabled = enabled) {
+                Text(if (uiState.notes.isBlank()) "Notes (optional)" else "Notes added")
+                Icon(if (showNotes) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+            }
+            AnimatedVisibility(showNotes) {
+                OutlinedTextField(value = uiState.notes, onValueChange = viewModel::onNotesChanged, label = { Text("Notes") },
+                    modifier = fieldModifier.testTag("expense-notes"), minLines = 2, maxLines = 4, enabled = enabled,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = finish)
             }
         }
     }
-    } // Box
 
-    // Date Picker Dialog
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = uiState.date

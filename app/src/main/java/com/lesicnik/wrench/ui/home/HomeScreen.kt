@@ -1,5 +1,7 @@
 package com.lesicnik.wrench.ui.home
 
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -28,8 +30,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.sync.ExpenseSyncState
-import com.lesicnik.wrench.ui.components.BottomBarHeight
-import com.lesicnik.wrench.ui.components.BottomBarWithFab
+import com.lesicnik.wrench.ui.components.VehicleTopBar
+import com.lesicnik.wrench.ui.components.VehicleNavigationBar
+import com.lesicnik.wrench.ui.components.AddRecordButton
+import com.lesicnik.wrench.ui.expenses.ExpenseDetailSheet
+import com.lesicnik.wrench.data.repository.maintenanceAgenda
+import com.lesicnik.wrench.data.repository.ReminderUrgency
+import com.lesicnik.wrench.ui.calendar.distanceLabel
+import com.lesicnik.wrench.ui.calendar.relativeDate
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.ErrorContent
 import com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter
@@ -55,11 +63,37 @@ fun HomeScreen(
     onNavigateToCalendar: () -> Unit,
     onMonthlyExpenses: () -> Unit,
     onAddExpense: (lastOdometer: Int?) -> Unit,
-    onOpenExpense: (Expense) -> Unit,
+    onEditExpense: (Expense) -> Unit,
     animateEntry: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    RefreshOnResumeEffect(onResume = { viewModel.loadStatistics() })
+    ErrorSnackbarEffect(uiState.errorMessage, snackbarHostState, viewModel::clearError)
+    HomeScreenContent(uiState, vehicleName, odometerUnit, onNavigateBack, onNavigateToExpenses,
+        onNavigateToStatistics, onNavigateToCalendar, onMonthlyExpenses, onAddExpense, onEditExpense,
+        { viewModel.loadStatistics(forceRefresh = true) }, animateEntry, snackbarHostState)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun HomeScreenContent(
+    uiState: HomeUiState,
+    vehicleName: String,
+    odometerUnit: String,
+    onNavigateBack: () -> Unit,
+    onNavigateToExpenses: () -> Unit,
+    onNavigateToStatistics: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
+    onMonthlyExpenses: () -> Unit,
+    onAddExpense: (Int?) -> Unit,
+    onEditExpense: (Expense) -> Unit,
+    onRefresh: () -> Unit,
+    animateEntry: Boolean = false,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+) {
+    BackHandler(onBack = onNavigateBack)
+    var selectedExpense by remember { mutableStateOf<Expense?>(null) }
     var animate by rememberSaveable { mutableStateOf(animateEntry) }
     val entry = remember { Animatable(if (animate) 0f else 1f) }
     LaunchedEffect(Unit) {
@@ -68,27 +102,24 @@ fun HomeScreen(
             animate = false
         }
     }
-    RefreshOnResumeEffect(onResume = { viewModel.loadStatistics() })
-    ErrorSnackbarEffect(uiState.errorMessage, snackbarHostState, viewModel::clearError)
-
+    val selectTab: (BottomTab) -> Unit = {
+        when (it) {
+            BottomTab.EXPENSES -> onNavigateToExpenses()
+            BottomTab.STATISTICS -> onNavigateToStatistics()
+            BottomTab.CALENDAR -> onNavigateToCalendar()
+            else -> Unit
+        }
+    }
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(vehicleName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        },
+        topBar = { VehicleTopBar("Home", vehicleName, onNavigateBack) },
+        bottomBar = { VehicleNavigationBar(BottomTab.HOME, selectTab) },
+        floatingActionButton = { AddRecordButton { onAddExpense(uiState.overview?.lastOdometer ?: uiState.fuelStatistics?.lastOdometer) } },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+        Box(Modifier.fillMaxSize().padding(padding)) {
             PullToRefreshBox(
                 isRefreshing = uiState.isLoading && uiState.fuelStatistics != null,
-                onRefresh = { viewModel.loadStatistics(forceRefresh = true) },
+                onRefresh = onRefresh,
                 modifier = Modifier.fillMaxSize()
             ) {
                 when {
@@ -107,11 +138,11 @@ fun HomeScreen(
                     uiState.fuelStatistics == null -> ErrorContent(
                         title = "Couldn't load your overview",
                         message = "Pull down to refresh or try again.",
-                        onRetry = { viewModel.loadStatistics(forceRefresh = true) },
+                        onRetry = onRefresh,
                         modifier = Modifier.fillMaxSize()
                     )
                     else -> HomeContent(
-                        uiState, odometerUnit, onNavigateToExpenses, onNavigateToStatistics, onMonthlyExpenses, onOpenExpense,
+                        uiState, odometerUnit, onNavigateToExpenses, onNavigateToStatistics, onMonthlyExpenses, { selectedExpense = it }, onNavigateToCalendar,
                         Modifier.fillMaxSize().graphicsLayer {
                             alpha = entry.value
                             translationY = (1f - entry.value) * 16.dp.toPx()
@@ -119,39 +150,34 @@ fun HomeScreen(
                     )
                 }
             }
-            BottomBarWithFab(
-                selectedTab = BottomTab.HOME,
-                onTabSelected = {
-                    when (it) {
-                        BottomTab.EXPENSES -> onNavigateToExpenses()
-                        BottomTab.STATISTICS -> onNavigateToStatistics()
-                        BottomTab.CALENDAR -> onNavigateToCalendar()
-                        else -> Unit
-                    }
-                },
-                onAddClick = { onAddExpense(uiState.overview?.lastOdometer ?: uiState.fuelStatistics?.lastOdometer) },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+
         }
+    }
+    selectedExpense?.let { expense ->
+        ExpenseDetailSheet(expense, odometerUnit, onDismiss = { selectedExpense = null }, onEdit = {
+            selectedExpense = null
+            onEditExpense(expense)
+        })
     }
 }
 
 @Composable
-private fun HomeContent(
+internal fun HomeContent(
     state: HomeUiState,
     odometerUnit: String,
     onExpenses: () -> Unit,
     onStatistics: () -> Unit,
     onMonthlyExpenses: () -> Unit,
     onOpenExpense: (Expense) -> Unit,
+    onMaintenance: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val stats = state.fuelStatistics ?: return
     val overview = state.overview
     val dateFormat = remember { DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM) }
     Column(
-        modifier.navigationBarsPadding().verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = BottomBarHeight + 32.dp),
+        modifier.verticalScroll(rememberScrollState())
+            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -169,6 +195,8 @@ private fun HomeContent(
                 }
             }
         }
+
+        NextMaintenanceCard(state, odometerUnit, onMaintenance)
 
         Card(
             onClick = onStatistics,
@@ -204,7 +232,7 @@ private fun HomeContent(
                 Surface(shape = RoundedCornerShape(20.dp), color = homeCardColor()) {
                     Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Your vehicle's story starts here", style = MaterialTheme.typography.titleSmall)
-                        Text("Tap + to record your first fill-up or expense.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Tap Add expense to record your first fill-up or expense.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
@@ -221,9 +249,10 @@ private fun HomeContent(
 
 @Composable
 private fun FuelValue(label: String, value: Double?, modifier: Modifier = Modifier, emphasize: Boolean = false) {
+    val locale = LocalConfiguration.current.locales[0]
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value?.let { String.format(Locale.getDefault(), "%.1f", it) } ?: "—", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold,
+        Text(value?.let { String.format(locale, "%.1f", it) } ?: "—", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold,
             color = if (emphasize) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
         Text("L/100 km", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -231,9 +260,10 @@ private fun FuelValue(label: String, value: Double?, modifier: Modifier = Modifi
 
 @Composable
 private fun SpendingCard(overview: HomeOverview?, onClick: () -> Unit) {
+    val locale = LocalConfiguration.current.locales[0]
     val money = rememberCurrencyFormatter()
     val today = LocalDate.now()
-    val monthFormat = DateTimeFormatter.ofPattern("MMMM", Locale.getDefault())
+    val monthFormat = DateTimeFormatter.ofPattern("MMMM", locale)
     val month = today.format(monthFormat)
     val previousMonth = today.minusMonths(1).format(monthFormat)
     val colors = MaterialTheme.colorScheme
@@ -257,7 +287,7 @@ private fun SpendingCard(overview: HomeOverview?, onClick: () -> Unit) {
                 Text("Pull down to retry loading expenses.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 val currentTotal = overview.thisMonthFuel + overview.thisMonthOther
-                val previousTotal = overview.lastMonthFuel + overview.lastMonthOther
+                val previousTotal = overview.previousMonthToDate
                 val difference = currentTotal - previousTotal
                 val secondaryColor = if (light) colors.onSurfaceVariant else colors.onPrimaryContainer
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -277,7 +307,7 @@ private fun SpendingCard(overview: HomeOverview?, onClick: () -> Unit) {
                 ) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(previousMonth, style = MaterialTheme.typography.titleSmall)
-                        Text("Full month", style = MaterialTheme.typography.bodySmall, color = secondaryColor)
+                        Text("Through ${overview.comparisonEnd.format(DateTimeFormatter.ofPattern("d MMM"))}", style = MaterialTheme.typography.bodySmall, color = secondaryColor)
                     }
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(money.format(previousTotal), style = MaterialTheme.typography.titleMedium)
@@ -311,9 +341,10 @@ private fun SpendingPart(label: String, amount: String, modifier: Modifier) {
 
 @Composable
 private fun ActivityRow(expense: Expense, odometerUnit: String, onClick: () -> Unit) {
+    val locale = LocalConfiguration.current.locales[0]
     val style = expense.type.getStyle()
     val money = rememberCurrencyFormatter()
-    val date = expense.date.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+    val date = expense.date.format(DateTimeFormatter.ofPattern("d MMM", locale))
     val syncLabel = when (expense.syncState) {
         ExpenseSyncState.SYNCED -> null
         ExpenseSyncState.SYNC_ERROR, ExpenseSyncState.CONFLICT -> "Needs sync attention"
@@ -321,8 +352,8 @@ private fun ActivityRow(expense: Expense, odometerUnit: String, onClick: () -> U
     }
     Surface(onClick = onClick, color = androidx.compose.ui.graphics.Color.Transparent) {
         Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)) {
-                Icon(style.icon, null, Modifier.padding(10.dp).size(20.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+            Surface(shape = RoundedCornerShape(12.dp), color = style.color.copy(alpha = 0.12f)) {
+                Icon(style.icon, null, Modifier.padding(10.dp).size(20.dp), tint = style.color)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(expense.description.ifBlank { style.label }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -343,4 +374,35 @@ private fun homeCardColor() = MaterialTheme.colorScheme.let { colors ->
 @Composable
 private fun homeCardBorder(): BorderStroke? = MaterialTheme.colorScheme.let { colors ->
     if (colors.surface.luminance() > 0.5f) BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.6f)) else null
+}
+
+@Composable
+private fun NextMaintenanceCard(state: HomeUiState, unit: String, onClick: () -> Unit) {
+    val next = maintenanceAgenda(state.reminders).firstOrNull()
+    val overdue = state.reminders.count { it.urgency == ReminderUrgency.PAST_DUE }
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = if (overdue > 0) MaterialTheme.colorScheme.errorContainer else homeCardColor())) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Next maintenance", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "View maintenance", Modifier.size(20.dp))
+            }
+            if (overdue > 0) Text("$overdue overdue", style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.error)
+            if (next != null) {
+                Text(next.description, style = MaterialTheme.typography.titleSmall)
+                Text(listOfNotNull(next.dueDate?.let { relativeDate(it, LocalDate.now()) },
+                    next.dueDistance?.let { distanceLabel(it, unit) },
+                    next.dueOdometer?.takeIf { next.dueDistance == null }?.let { "At ${NumberFormat.getIntegerInstance().format(it)} $unit" })
+                    .joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                if (state.maintenanceError != null) Text("Showing saved reminders", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text(when {
+                    state.maintenanceError != null -> "Couldn't refresh maintenance. Tap to review or retry."
+                    !state.remindersLoaded -> "Loading maintenance…"
+                    else -> "Nothing scheduled. Plan your next service."
+                }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
 }

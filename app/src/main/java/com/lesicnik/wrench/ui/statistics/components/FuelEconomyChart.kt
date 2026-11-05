@@ -1,5 +1,8 @@
 package com.lesicnik.wrench.ui.statistics.components
 
+import com.lesicnik.wrench.ui.components.screenCardColors
+
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -37,17 +40,19 @@ fun FuelEconomyChart(
     fuelEconomyTrends: List<FuelEconomyPoint>,
     modifier: Modifier = Modifier
 ) {
+    val locale = LocalConfiguration.current.locales[0]
     // Only show if we have at least 2 data points
     if (fuelEconomyTrends.size < 2) {
         return
     }
 
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("MMM d") }
+    val dateFormatter = remember(locale) { DateTimeFormatter.ofPattern("MMM d", locale) }
     val gridColor = MaterialTheme.colorScheme.outlineVariant
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = screenCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -95,17 +100,17 @@ fun FuelEconomyChart(
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f", paddedMax),
+                        text = String.format(locale, "%.1f", paddedMax),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f", (paddedMax + paddedMin) / 2),
+                        text = String.format(locale, "%.1f", (paddedMax + paddedMin) / 2),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f", paddedMin),
+                        text = String.format(locale, "%.1f", paddedMin),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -196,7 +201,7 @@ fun FuelEconomyChart(
                     ChartTooltip(offset = offset) {
                         TooltipContent(
                             label = point.date.format(dateFormatter),
-                            value = String.format(Locale.getDefault(), "%.1f L/100km", point.consumption)
+                            value = String.format(locale, "%.1f L/100km", point.consumption)
                         )
                     }
                 }
@@ -215,7 +220,7 @@ fun FuelEconomyChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f L/100", minValue),
+                        text = String.format(locale, "%.1f L/100", minValue),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -227,7 +232,7 @@ fun FuelEconomyChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f L/100", avgValue),
+                        text = String.format(locale, "%.1f L/100", avgValue),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -239,7 +244,7 @@ fun FuelEconomyChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%.1f L/100", maxValue),
+                        text = String.format(locale, "%.1f L/100", maxValue),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )

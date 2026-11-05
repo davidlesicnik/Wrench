@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.ui.calendar
 
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -44,30 +45,6 @@ internal fun calendarPanelBorder() = MaterialTheme.colorScheme.let {
 }
 
 @Composable
-internal fun CalendarViewSwitch(mileage: Boolean, calendarCount: Int, mileageCount: Int, onSelect: (Boolean) -> Unit) {
-    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            listOf(false, true).forEach { isMileage ->
-                val active = mileage == isMileage
-                val color by animateColorAsState(if (active) calendarPanelColor() else Color.Transparent, label = "calendar-view")
-                Surface(onClick = { onSelect(isMileage) }, modifier = Modifier.weight(1f).semantics { selected = active; role = Role.Tab },
-                    shape = RoundedCornerShape(14.dp), color = color,
-                    shadowElevation = if (active) 1.dp else 0.dp) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 12.dp), horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Icon(if (isMileage) Icons.Default.Speed else Icons.Default.CalendarMonth, null, Modifier.size(18.dp),
-                            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isMileage) "Mileage · $mileageCount" else "Calendar · $calendarCount",
-                            style = MaterialTheme.typography.labelLarge, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 internal fun MonthCalendar(
     month: YearMonth,
     selectedDate: LocalDate?,
@@ -76,7 +53,7 @@ internal fun MonthCalendar(
     onMonthChange: (YearMonth) -> Unit,
     onSelect: (LocalDate) -> Unit
 ) {
-    val locale = Locale.getDefault()
+    val locale = LocalConfiguration.current.locales[0]
     val start = month.atDay(1)
     val firstDay = WeekFields.of(locale).firstDayOfWeek
     val offset = (start.dayOfWeek.value - firstDay.value + 7) % 7
@@ -146,6 +123,7 @@ internal fun MonthCalendar(
 
 @Composable
 internal fun ReminderCard(reminder: Reminder, unit: String, mileage: Boolean, today: LocalDate, onClick: () -> Unit) {
+    val locale = LocalConfiguration.current.locales[0]
     // Lazy rows can recompose during a view transition before the old item is removed.
     val target = reminder.dueOdometer
     val showMileage = mileage && target != null
@@ -161,10 +139,10 @@ internal fun ReminderCard(reminder: Reminder, unit: String, mileage: Boolean, to
                     reminder.dueDistance?.let { Text(distanceLabel(it, unit), style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface) }
                     Text("At ${reading(target)} $unit" +
-                        (reminder.dueDate?.let { " · by ${it.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}" } ?: ""),
+                        (reminder.dueDate?.let { " · by ${it.format(DateTimeFormatter.ofPattern("d MMM", locale))}" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
-                    Text(listOfNotNull(reminder.dueDate?.let { relativeDate(it, today) }, reminder.dueOdometer?.let { "${reading(it)} $unit" }).joinToString(" · "),
+                    Text(listOfNotNull(reminder.dueDate?.let { relativeDate(it, today) }, reminder.dueDistance?.let { distanceLabel(it, unit) } ?: reminder.dueOdometer?.let { "At ${reading(it)} $unit" }).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 UrgencyBadge(reminder.urgency)

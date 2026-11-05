@@ -1,5 +1,8 @@
 package com.lesicnik.wrench.ui.statistics.components
 
+import com.lesicnik.wrench.ui.components.screenCardColors
+
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,11 +34,13 @@ fun ExpenseBreakdownChart(
     breakdown: List<ExpenseBreakdownItem>,
     modifier: Modifier = Modifier
 ) {
+    val locale = LocalConfiguration.current.locales[0]
     val currencyFormatter = com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter()
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = screenCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -91,7 +96,7 @@ fun ExpenseBreakdownChart(
                                 }
                                 Row {
                                     Text(
-                                        text = String.format(Locale.getDefault(), "%.0f%%", item.percentage),
+                                        text = String.format(locale, "%.0f%%", item.percentage),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

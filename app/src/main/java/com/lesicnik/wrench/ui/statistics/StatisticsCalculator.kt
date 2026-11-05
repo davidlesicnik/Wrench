@@ -49,17 +49,31 @@ data class KeyStatistics(
     val expenseCount: Int
 )
 
+data class SpendingComparison(val current: Double, val previous: Double, val previousStart: LocalDate, val previousEnd: LocalDate)
+
 object StatisticsCalculator {
 
-    fun filterExpensesByPeriod(expenses: List<Expense>, period: TimePeriod): List<Expense> {
-        val now = LocalDate.now()
-        val startDate = when (period) {
-            TimePeriod.LAST_30_DAYS -> now.minusDays(30)
-            TimePeriod.LAST_90_DAYS -> now.minusDays(90)
-            TimePeriod.LAST_12_MONTHS -> now.minusMonths(12)
-            TimePeriod.ALL_TIME -> LocalDate.MIN
-        }
-        return expenses.filter { it.date >= startDate }
+    fun periodStart(period: TimePeriod, today: LocalDate): LocalDate = when (period) {
+        TimePeriod.LAST_30_DAYS -> today.minusDays(29)
+        TimePeriod.LAST_90_DAYS -> today.minusDays(89)
+        TimePeriod.LAST_12_MONTHS -> today.minusMonths(12).plusDays(1)
+        TimePeriod.ALL_TIME -> LocalDate.MIN
+    }
+
+    fun filterExpensesByPeriod(expenses: List<Expense>, period: TimePeriod, today: LocalDate = LocalDate.now()): List<Expense> =
+        expenses.filter { it.date in periodStart(period, today)..today }
+
+    fun spendingComparison(expenses: List<Expense>, period: TimePeriod, today: LocalDate = LocalDate.now()): SpendingComparison? {
+        if (period == TimePeriod.ALL_TIME) return null
+        val start = periodStart(period, today)
+        val days = ChronoUnit.DAYS.between(start, today) + 1
+        val previousEnd = start.minusDays(1)
+        val previousStart = start.minusDays(days)
+        return SpendingComparison(
+            expenses.filter { it.date in start..today }.sumOf { it.cost },
+            expenses.filter { it.date in previousStart..previousEnd }.sumOf { it.cost },
+            previousStart, previousEnd
+        )
     }
 
     fun calculateExpenseBreakdown(expenses: List<Expense>): List<ExpenseBreakdownItem> {
@@ -82,23 +96,14 @@ object StatisticsCalculator {
             .sortedByDescending { it.totalCost }
     }
 
-    fun calculateCostTrends(expenses: List<Expense>, period: TimePeriod): List<CostTrendPoint> {
+    fun calculateCostTrends(expenses: List<Expense>, period: TimePeriod, today: LocalDate = LocalDate.now()): List<CostTrendPoint> {
         if (expenses.isEmpty()) return emptyList()
 
-        val now = LocalDate.now()
-        val currentMonth = YearMonth.now()
-
-        // Determine how many months to show based on period
-        val monthsToShow = when (period) {
-            TimePeriod.LAST_30_DAYS -> 1
-            TimePeriod.LAST_90_DAYS -> 3
-            TimePeriod.LAST_12_MONTHS -> 12
-            TimePeriod.ALL_TIME -> {
-                val oldestDate = expenses.minOfOrNull { it.date } ?: now
-                val monthsBetween = ChronoUnit.MONTHS.between(YearMonth.from(oldestDate), currentMonth).toInt() + 1
-                monthsBetween.coerceIn(1, 24) // Cap at 24 months for readability
-            }
-        }
+        val currentMonth = YearMonth.from(today)
+        val firstMonth = if (period == TimePeriod.ALL_TIME) {
+            maxOf(YearMonth.from(expenses.minOf { it.date }), currentMonth.minusMonths(23))
+        } else YearMonth.from(periodStart(period, today))
+        val monthsToShow = (ChronoUnit.MONTHS.between(firstMonth, currentMonth).toInt() + 1).coerceAtLeast(1)
 
         val monthlyData = mutableMapOf<YearMonth, Pair<Double, Double>>()
 
@@ -109,7 +114,7 @@ object StatisticsCalculator {
         }
 
         // Group expenses by month
-        expenses.forEach { expense ->
+        filterExpensesByPeriod(expenses, period, today).forEach { expense ->
             val month = YearMonth.from(expense.date)
             if (monthlyData.containsKey(month)) {
                 val (fuel, other) = monthlyData[month]!!
@@ -126,7 +131,7 @@ object StatisticsCalculator {
             .map { (month, costs) ->
                 CostTrendPoint(
                     date = month.atDay(1),
-                    label = month.month.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
+                    label = month.format(java.time.format.DateTimeFormatter.ofPattern(if (firstMonth.year != currentMonth.year) "MMM yy" else "MMM")),
                     fuelCost = costs.first,
                     otherCost = costs.second
                 )

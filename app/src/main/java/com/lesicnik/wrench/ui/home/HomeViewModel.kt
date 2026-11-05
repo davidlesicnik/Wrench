@@ -7,6 +7,9 @@ import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.FuelStatistics
+import com.lesicnik.wrench.data.repository.Reminder
+import com.lesicnik.wrench.data.repository.ReminderRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,17 +20,23 @@ data class HomeUiState(
     val fuelStatistics: FuelStatistics? = null,
     val overview: HomeOverview? = null,
     val isLoading: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val reminders: List<Reminder> = emptyList(),
+    val remindersLoaded: Boolean = false,
+    val maintenanceError: String? = null
 )
 
 class HomeViewModel(
     private val credentialsRepository: CredentialsRepository,
     private val expenseRepository: ExpenseRepository,
-    private val vehicleId: Int
+    private val vehicleId: Int,
+    private val reminderRepository: ReminderRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private var maintenanceJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -36,7 +45,23 @@ class HomeViewModel(
         loadStatistics()
     }
 
+    private fun loadMaintenance() {
+        if (maintenanceJob?.isActive == true) return
+        maintenanceJob = viewModelScope.launch {
+            val credentials = credentialsRepository.getCredentials() ?: return@launch
+            reminderRepository.cached(credentials, vehicleId)?.let { snapshot ->
+                _uiState.value = _uiState.value.copy(reminders = snapshot.reminders, remindersLoaded = true)
+            }
+            when (val result = reminderRepository.refresh(credentials, vehicleId)) {
+                is ApiResult.Success -> _uiState.value = _uiState.value.copy(
+                    reminders = result.data.reminders, remindersLoaded = true, maintenanceError = null)
+                is ApiResult.Error -> _uiState.value = _uiState.value.copy(maintenanceError = result.message)
+            }
+        }
+    }
+
     fun loadStatistics(forceRefresh: Boolean = false) {
+        loadMaintenance()
         viewModelScope.launch {
             // Check if we have cached data available
             val cachedStats = expenseRepository.getCachedFuelStatistics(vehicleId)
@@ -113,11 +138,12 @@ class HomeViewModel(
     class Factory(
         private val credentialsRepository: CredentialsRepository,
         private val expenseRepository: ExpenseRepository,
-        private val vehicleId: Int
+        private val vehicleId: Int,
+        private val reminderRepository: ReminderRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return HomeViewModel(credentialsRepository, expenseRepository, vehicleId) as T
+            return HomeViewModel(credentialsRepository, expenseRepository, vehicleId, reminderRepository) as T
         }
     }
 }

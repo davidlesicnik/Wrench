@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.util.Currency
@@ -45,7 +46,7 @@ fun AppPreferencesProvider(content: @Composable () -> Unit) {
 @Composable
 fun rememberCurrencyFormatter(): NumberFormat {
     val code = LocalAppPreferences.current.currencyCode
-    val locale = LocalContext.current.resources.configuration.locales[0]
+    val locale = LocalConfiguration.current.locales[0]
     return remember(code, locale) {
         NumberFormat.getCurrencyInstance(locale).apply { currency = Currency.getInstance(code) }
     }
