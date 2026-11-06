@@ -40,10 +40,12 @@ interface ExpenseDao {
           AND vehicleRemoteId = :vehicleRemoteId
           AND type = :type
           AND remoteId = :remoteId
+          AND (accountKey IS NULL OR accountKey = :accountKey)
+        ORDER BY accountKey IS NOT NULL DESC
         LIMIT 1
         """
     )
-    suspend fun findByRemoteId(serverUrl: String, vehicleRemoteId: Int, type: String, remoteId: Int): ExpenseEntity?
+    suspend fun findByRemoteId(serverUrl: String, vehicleRemoteId: Int, type: String, remoteId: Int, accountKey: String): ExpenseEntity?
 
     @Query("SELECT * FROM expenses WHERE localId = :localId LIMIT 1")
     suspend fun getByLocalId(localId: Int): ExpenseEntity?

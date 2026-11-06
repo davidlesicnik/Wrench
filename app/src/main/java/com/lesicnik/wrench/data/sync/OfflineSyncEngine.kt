@@ -24,8 +24,10 @@ import com.lesicnik.wrench.data.repository.offline.toJson as entityToJson
 import com.lesicnik.wrench.data.repository.offline.toJson as snapshotToJson
 import java.time.LocalDate
 import kotlin.math.abs
-import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class OfflineSyncEngine(
     private val database: WrenchDatabase,
@@ -34,7 +36,9 @@ class OfflineSyncEngine(
     private val maintenanceCoordinator: MaintenanceCoordinator = MaintenanceCoordinator(database),
     private val loadVehicles: suspend (String, String) -> retrofit2.Response<List<Vehicle>> = { server, key ->
         NetworkModule.getApi(server).getVehicles(key)
-    }
+    },
+    private val loadExpenseRecords: suspend (String, String, Int) -> ApiResult<ExpenseRecordBundle> =
+        remoteDataSource::fetchAllExpenseRecords
 ) {
 
     companion object {
@@ -42,43 +46,44 @@ class OfflineSyncEngine(
         private val syncMutex = MaintenanceCoordinator.writeMutex
     }
 
-    suspend fun syncServer(serverUrl: String, apiKey: String, preferredVehicleIds: List<Int> = emptyList()): ApiResult<Unit> {
-        return syncMutex.withLock {
-            val vehicleIds = mutableSetOf<Int>()
+    suspend fun syncServer(serverUrl: String, apiKey: String, preferredVehicleIds: List<Int> = emptyList()): ApiResult<Unit> =
+        withContext(Dispatchers.IO) {
+            syncMutex.withLock {
+                val vehicleIds = mutableSetOf<Int>()
 
-            val remoteVehiclesResult = refreshVehiclesFromRemote(serverUrl, apiKey)
-            when (remoteVehiclesResult) {
-                is ApiResult.Success -> {
-                    vehicleIds += remoteVehiclesResult.data.map { it.id }
-                }
-                is ApiResult.Error -> {
-                    val localVehicles = database.vehicleDao().getVehicles(serverUrl)
-                    if (localVehicles.isEmpty()) {
-                        return@withLock ApiResult.Error(remoteVehiclesResult.message)
+                val remoteVehiclesResult = refreshVehiclesFromRemote(serverUrl, apiKey)
+                when (remoteVehiclesResult) {
+                    is ApiResult.Success -> {
+                        vehicleIds += remoteVehiclesResult.data.map { it.id }
                     }
-                    vehicleIds += localVehicles.map { it.remoteId }
+                    is ApiResult.Error -> {
+                        val localVehicles = database.vehicleDao().getVehicles(serverUrl)
+                        if (localVehicles.isEmpty()) {
+                            return@withLock ApiResult.Error(remoteVehiclesResult.message)
+                        }
+                        vehicleIds += localVehicles.map { it.remoteId }
+                    }
                 }
-            }
 
-            // A failed read-only connection check must leave unsent creations queued.
-            // Otherwise opening Maintenance while offline would misclassify them as uncertain writes.
-            if (remoteVehiclesResult is ApiResult.Success) {
-                maintenanceCoordinator.syncLocked(Credentials(serverUrl, apiKey))
-            }
-            val pendingOps = database.pendingSyncOpDao().getPendingOperations(serverUrl)
-            vehicleIds += pendingOps.map { it.vehicleRemoteId }
-
-            val priority = preferredVehicleIds.withIndex().associate { it.value to it.index }
-            for (vehicleId in vehicleIds.sortedBy { priority[it] ?: Int.MAX_VALUE }) {
-                val vehicleSyncResult = syncVehicle(serverUrl, apiKey, vehicleId)
-                if (vehicleSyncResult is ApiResult.Error) {
-                    return@withLock vehicleSyncResult
+                // A failed read-only connection check must leave unsent creations queued.
+                // Otherwise opening Maintenance while offline would misclassify them as uncertain writes.
+                if (remoteVehiclesResult is ApiResult.Success) {
+                    maintenanceCoordinator.syncLocked(Credentials(serverUrl, apiKey))
                 }
-            }
+                val pendingOps = database.pendingSyncOpDao().getPendingOperations(serverUrl)
+                vehicleIds += pendingOps.map { it.vehicleRemoteId }
 
-            ApiResult.Success(Unit)
+                val priority = preferredVehicleIds.withIndex().associate { it.value to it.index }
+                for (vehicleId in vehicleIds.sortedBy { priority[it] ?: Int.MAX_VALUE }) {
+                    val vehicleSyncResult = syncVehicle(serverUrl, apiKey, vehicleId)
+                    if (vehicleSyncResult is ApiResult.Error) {
+                        return@withLock vehicleSyncResult
+                    }
+                }
+
+                ApiResult.Success(Unit)
+            }
         }
-    }
 
     private suspend fun refreshVehiclesFromRemote(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {
         return try {
@@ -94,6 +99,8 @@ class OfflineSyncEngine(
                 }
                 ApiResult.Success(vehicles)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Failed to fetch vehicles")
         }
@@ -119,7 +126,15 @@ class OfflineSyncEngine(
             .filter { it.vehicleRemoteId == vehicleRemoteId && it.accountKey == accountKey }
 
         for (op in pendingOps) {
-            val entity = expenseDao.getByLocalId(op.expenseLocalId)
+            val stored = expenseDao.getByLocalId(op.expenseLocalId)
+            if (stored != null && (stored.serverUrl != serverUrl || stored.vehicleRemoteId != vehicleRemoteId ||
+                    (stored.accountKey != null && stored.accountKey != accountKey))) {
+                return ApiResult.Error("Queued expense belongs to another account.")
+            }
+            val entity = stored?.let { local ->
+                if (local.accountKey == null) local.copy(accountKey = accountKey).also { expenseDao.updateExpense(it) }
+                else local
+            }
             val payload = parseExpenseOperationPayload(op.payloadJson)
 
             when (SyncOperationType.valueOf(op.opType)) {
@@ -284,108 +299,127 @@ class OfflineSyncEngine(
             }
         }
 
-        remoteSnapshots = when (val remoteResult = fetchRemoteSnapshots(serverUrl, apiKey, vehicleRemoteId)) {
-            is ApiResult.Success -> remoteResult.data
-            is ApiResult.Error -> return ApiResult.Error(remoteResult.message)
+        // Only writes can invalidate the snapshot fetched at the start of this vehicle's sync.
+        if (pendingOps.isNotEmpty()) {
+            remoteSnapshots = when (val remoteResult = fetchRemoteSnapshots(serverUrl, apiKey, vehicleRemoteId)) {
+                is ApiResult.Success -> remoteResult.data
+                is ApiResult.Error -> return ApiResult.Error(remoteResult.message)
+            }
         }
 
-        val activePending = pendingDao.getPendingOperations(serverUrl)
-            .filter { it.vehicleRemoteId == vehicleRemoteId }
-            .associateBy { it.expenseLocalId }
+        // Publish one complete snapshot instead of invalidating Room flows for every row.
+        // Keep network calls outside the transaction so local reads stay available while syncing.
+        database.withTransaction {
+            val refreshedByKey = remoteSnapshots.associateBy { it.type.name to it.remoteId }
+            val activePending = pendingDao.getPendingOperations(serverUrl)
+                .filter { it.vehicleRemoteId == vehicleRemoteId }
+                .associateBy { it.expenseLocalId }
 
-        val localExpenses = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId).filter { it.accountKey == null }
-        val nowForReconcile = System.currentTimeMillis()
-        val consumedRemoteKeys = mutableSetOf<Pair<String, Int>>()
-
-        for (local in localExpenses) {
-            val state = runCatching { ExpenseSyncState.valueOf(local.syncState) }
-                .getOrDefault(ExpenseSyncState.SYNCED)
-            if (state == ExpenseSyncState.CONFLICT || local.isDeletedLocal || activePending.containsKey(local.localId)) {
-                continue
+            // Recover ownership of ordinary rows saved before expenses carried their operation's identity.
+            for (op in activePending.values) {
+                val local = expenseDao.getByLocalId(op.expenseLocalId)
+                if (local != null && local.accountKey == null && op.accountKey != null) {
+                    expenseDao.updateExpense(local.copy(accountKey = op.accountKey))
+                }
             }
+            val unresolvedConflictIds = conflictDao.getUnresolvedConflicts(serverUrl)
+                .map { it.expenseLocalId }
+                .toSet()
+            val protectedIds = activePending.keys + unresolvedConflictIds + database.maintenanceDao().uploads(accountKey)
+                .filter { it.status != "CONFIRMED" }
+                .map { it.expenseLocalId }
+            val localExpenses = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId)
+                .filter { it.accountKey == null || it.accountKey == accountKey }
+            val nowForReconcile = System.currentTimeMillis()
+            val consumedRemoteKeys = mutableSetOf<Pair<String, Int>>()
 
-            val remoteId = local.remoteId
-            if (remoteId != null) {
-                val key = local.type to remoteId
-                val remote = remoteSnapshots.firstOrNull { it.type.name == key.first && it.remoteId == key.second }
-                if (remote == null) {
-                    expenseDao.deleteByLocalId(local.localId)
+            for (local in localExpenses) {
+                val state = runCatching { ExpenseSyncState.valueOf(local.syncState) }
+                    .getOrDefault(ExpenseSyncState.SYNCED)
+                if (state == ExpenseSyncState.CONFLICT || local.isDeletedLocal || local.localId in protectedIds) {
                     continue
                 }
 
-                consumedRemoteKeys += key
-                expenseDao.updateExpense(local.mergeFromRemote(remote, nowForReconcile))
-            }
-        }
+                val remoteId = local.remoteId
+                if (remoteId != null) {
+                    val key = local.type to remoteId
+                    val remote = refreshedByKey[key]
+                    if (remote == null) {
+                        expenseDao.deleteByLocalId(local.localId)
+                        continue
+                    }
 
-        val syncedUnlinkedCandidates = localExpenses
-            .filter {
-                val state = runCatching { ExpenseSyncState.valueOf(it.syncState) }
+                    consumedRemoteKeys += key
+                    expenseDao.updateExpense(local.mergeFromRemote(remote, nowForReconcile))
+                }
+            }
+
+            val syncedUnlinkedCandidates = localExpenses
+                .filter {
+                    val state = runCatching { ExpenseSyncState.valueOf(it.syncState) }
+                        .getOrDefault(ExpenseSyncState.SYNCED)
+                    state == ExpenseSyncState.SYNCED &&
+                        it.remoteId == null &&
+                        !it.isDeletedLocal &&
+                        it.localId !in protectedIds
+                }
+                .toMutableList()
+
+            for (remote in remoteSnapshots) {
+                val key = remote.type.name to remote.remoteId
+                if (consumedRemoteKeys.contains(key)) continue
+
+                val existingByRemote = expenseDao.findByRemoteId(
+                    serverUrl = serverUrl,
+                    vehicleRemoteId = vehicleRemoteId,
+                    type = remote.type.name,
+                    remoteId = remote.remoteId,
+                    accountKey = accountKey
+                )
+
+                if (existingByRemote != null && (existingByRemote.localId in protectedIds || existingByRemote.syncState == ExpenseSyncState.CONFLICT.name)) {
+                    consumedRemoteKeys += key
+                    continue
+                }
+                if (existingByRemote != null) {
+                    expenseDao.updateExpense(existingByRemote.mergeFromRemote(remote, nowForReconcile))
+                    consumedRemoteKeys += key
+                    continue
+                }
+
+                val fingerprint = remote.computeFingerprint()
+                val candidateIndex = syncedUnlinkedCandidates.indexOfFirst {
+                    it.computeFingerprint() == fingerprint || it.matchesRemoteForLinking(remote)
+                }
+                val candidate = syncedUnlinkedCandidates.getOrNull(candidateIndex)
+
+                if (candidate != null) {
+                    expenseDao.updateExpense(candidate.mergeFromRemote(remote, nowForReconcile))
+                    syncedUnlinkedCandidates.removeAt(candidateIndex)
+                    consumedRemoteKeys += key
+                    continue
+                }
+
+                expenseDao.insertExpense(remote.toEntity(serverUrl, vehicleRemoteId, nowForReconcile))
+            }
+
+            database.syncMetaDao().upsertMeta(
+                SyncMetaEntity(
+                    serverUrl = serverUrl,
+                    vehicleRemoteId = vehicleRemoteId,
+                    lastFullSyncAt = now
+                )
+            )
+
+            val syncedCandidates = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId)
+                .filter { it.localId !in protectedIds && (it.accountKey == null || it.accountKey == accountKey) }
+
+            for (item in syncedCandidates) {
+                val state = runCatching { ExpenseSyncState.valueOf(item.syncState) }
                     .getOrDefault(ExpenseSyncState.SYNCED)
-                state == ExpenseSyncState.SYNCED &&
-                    it.remoteId == null &&
-                    !it.isDeletedLocal &&
-                    !activePending.containsKey(it.localId)
-            }
-            .toMutableList()
-
-        for (remote in remoteSnapshots) {
-            val key = remote.type.name to remote.remoteId
-            if (consumedRemoteKeys.contains(key)) continue
-
-            val existingByRemote = expenseDao.findByRemoteId(
-                serverUrl = serverUrl,
-                vehicleRemoteId = vehicleRemoteId,
-                type = remote.type.name,
-                remoteId = remote.remoteId
-            )
-
-            if (existingByRemote?.accountKey != null) {
-                consumedRemoteKeys += key
-                continue
-            }
-            if (existingByRemote != null) {
-                expenseDao.updateExpense(existingByRemote.mergeFromRemote(remote, nowForReconcile))
-                consumedRemoteKeys += key
-                continue
-            }
-
-            val fingerprint = remote.computeFingerprint()
-            val candidateIndex = syncedUnlinkedCandidates.indexOfFirst {
-                it.computeFingerprint() == fingerprint || it.matchesRemoteForLinking(remote)
-            }
-            val candidate = syncedUnlinkedCandidates.getOrNull(candidateIndex)
-
-            if (candidate != null) {
-                expenseDao.updateExpense(candidate.mergeFromRemote(remote, nowForReconcile))
-                syncedUnlinkedCandidates.removeAt(candidateIndex)
-                consumedRemoteKeys += key
-                continue
-            }
-
-            expenseDao.insertExpense(remote.toEntity(serverUrl, vehicleRemoteId, nowForReconcile))
-        }
-
-        database.syncMetaDao().upsertMeta(
-            SyncMetaEntity(
-                serverUrl = serverUrl,
-                vehicleRemoteId = vehicleRemoteId,
-                lastFullSyncAt = now
-            )
-        )
-
-        val unresolvedConflictIds = conflictDao.getUnresolvedConflicts(serverUrl)
-            .map { it.expenseLocalId }
-            .toSet()
-
-        val syncedCandidates = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId)
-            .filter { it.localId !in unresolvedConflictIds }
-
-        for (item in syncedCandidates) {
-            val state = runCatching { ExpenseSyncState.valueOf(item.syncState) }
-                .getOrDefault(ExpenseSyncState.SYNCED)
-            if (state == ExpenseSyncState.SYNC_ERROR) {
-                expenseDao.updateExpense(item.copy(syncState = ExpenseSyncState.SYNCED.name, lastSyncError = null))
+                if (state == ExpenseSyncState.SYNC_ERROR) {
+                    expenseDao.updateExpense(item.copy(syncState = ExpenseSyncState.SYNCED.name, lastSyncError = null))
+                }
             }
         }
 
@@ -449,7 +483,7 @@ class OfflineSyncEngine(
         apiKey: String,
         vehicleRemoteId: Int
     ): ApiResult<List<RemoteExpenseSnapshot>> {
-        return when (val result = remoteDataSource.fetchAllExpenseRecords(serverUrl, apiKey, vehicleRemoteId)) {
+        return when (val result = loadExpenseRecords(serverUrl, apiKey, vehicleRemoteId)) {
             is ApiResult.Error -> ApiResult.Error(result.message)
             is ApiResult.Success -> ApiResult.Success(result.data.toSnapshots(vehicleRemoteId, mapper))
         }

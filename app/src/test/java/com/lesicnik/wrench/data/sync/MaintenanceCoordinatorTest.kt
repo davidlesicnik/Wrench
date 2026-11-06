@@ -177,6 +177,29 @@ class MaintenanceCoordinatorTest {
         assertEquals("CANCELLED", op().status)
         assertFalse(remote.calls.contains("update"))
     }
+
+    @Test fun `applying metric conflicts restores schedule fields that were unchanged locally`() = runBlocking {
+        for (serverMetric in listOf(ReminderMetric.ODOMETER, ReminderMetric.DATE)) {
+            val baseline = ReminderValues.from(original)
+            val localTarget = if (serverMetric == ReminderMetric.ODOMETER) baseline.copy(dueOdometer = 20000)
+                else baseline.copy(dueDate = "2027-11-06")
+            coordinator.queue(c, original, localTarget)
+            remote.current = baseline.copy(metric = serverMetric,
+                dueDate = baseline.dueDate.takeIf { serverMetric != ReminderMetric.ODOMETER },
+                dueOdometer = baseline.dueOdometer.takeIf { serverMetric != ReminderMetric.DATE },
+                notes = "Changed on server", tags = "server tags")
+            sync()
+            assertEquals("CONFLICT", op().status)
+            coordinator.resolve(c, 1, 7, true)
+            sync()
+            assertEquals("CONFIRMED", op().status)
+            assertEquals(localTarget.copy(notes = "Changed on server", tags = "server tags"), remote.current)
+            assertNull(remote.current!!.draft().validationError())
+            val calls = remote.calls.size
+            sync()
+            assertEquals(calls, remote.calls.size)
+        }
+    }
     @Test fun `permissions unsupported endpoints and false success pause writes`() = runBlocking {
         for (code in listOf(401, 403, 404, 405, 501, 200)) {
             coordinator.queue(c, original, target)

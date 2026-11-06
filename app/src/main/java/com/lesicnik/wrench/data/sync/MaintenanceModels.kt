@@ -18,14 +18,22 @@ data class ReminderValues(
 ) {
     fun draft() = ReminderDraft(description, metric, dueDate?.let(LocalDate::parse), dueOdometer, notes, tags)
     fun fields(): List<Any?> = listOf(description, metric, dueDate, dueOdometer, notes, tags)
-    fun merge(original: ReminderValues, current: ReminderValues): ReminderValues = ReminderValues(
-        if (description != original.description) description else current.description,
-        if (metric != original.metric || dueDate != original.dueDate || dueOdometer != original.dueOdometer) metric else current.metric,
-        if (dueDate != original.dueDate) dueDate else current.dueDate,
-        if (dueOdometer != original.dueOdometer) dueOdometer else current.dueOdometer,
-        if (notes != original.notes) notes else current.notes,
-        if (tags != original.tags) tags else current.tags
-    )
+    fun merge(original: ReminderValues, current: ReminderValues): ReminderValues {
+        val scheduleChanged = metric != original.metric || dueDate != original.dueDate || dueOdometer != original.dueOdometer
+        val mergedMetric = if (scheduleChanged) metric else current.metric
+        // Restoring a metric also restores its required values, even when they were unchanged locally.
+        val restoreSchedule = scheduleChanged && mergedMetric != current.metric
+        return ReminderValues(
+            if (description != original.description) description else current.description,
+            mergedMetric,
+            if (mergedMetric == ReminderMetric.ODOMETER) null
+            else if (dueDate != original.dueDate || restoreSchedule) dueDate else current.dueDate,
+            if (mergedMetric == ReminderMetric.DATE) null
+            else if (dueOdometer != original.dueOdometer || restoreSchedule) dueOdometer else current.dueOdometer,
+            if (notes != original.notes) notes else current.notes,
+            if (tags != original.tags) tags else current.tags
+        )
+    }
     fun conflicts(original: ReminderValues, current: ReminderValues): Boolean {
         if ((dueDate != original.dueDate || dueOdometer != original.dueOdometer) && current.metric != original.metric) return true
         return fields().indices.any { fields()[it] != original.fields()[it] &&
