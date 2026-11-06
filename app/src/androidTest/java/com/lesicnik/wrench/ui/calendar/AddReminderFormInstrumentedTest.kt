@@ -1,26 +1,30 @@
 package com.lesicnik.wrench.ui.calendar
 
+import android.graphics.Bitmap
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.lesicnik.wrench.ui.theme.WrenchTheme
+import java.io.File
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.time.LocalDate
 
 @RunWith(AndroidJUnit4::class)
 class AddReminderFormInstrumentedTest {
     @get:Rule val compose = createComposeRule()
+    private val dark = InstrumentationRegistry.getArguments().getString("darkUx") == "true"
 
     @Test
     fun validatesDateMileageAndCombinedSchedules() {
         var state by mutableStateOf(AddReminderUiState(metric = com.lesicnik.wrench.data.repository.ReminderMetric.DATE))
         var saves = 0
         compose.setContent {
-            WrenchTheme { AddReminderContent(state, "2000 Test Test", "km", { state = it(state) }, { saves++ }, {}) }
+            WrenchTheme(darkTheme = dark, dynamicColor = false) { AddReminderContent(state, "2021 Skoda Superb", "km", { state = it(state) }, { saves++ }, {}) }
         }
         compose.onNodeWithText("Save reminder").assertIsNotEnabled()
         compose.onNodeWithTag("reminder-description").performTextInput("Oil and filter")
@@ -45,8 +49,8 @@ class AddReminderFormInstrumentedTest {
     fun backsOutWithoutLosingEditsUnlessDiscarded() {
         var state by mutableStateOf(AddReminderUiState(metric = com.lesicnik.wrench.data.repository.ReminderMetric.DATE))
         var exits = 0
-        compose.setContent { WrenchTheme {
-            AddReminderContent(state, "2000 Test Test", "km", { state = it(state) }, {}, { exits++ })
+        compose.setContent { WrenchTheme(darkTheme = dark, dynamicColor = false) {
+            AddReminderContent(state, "2021 Skoda Superb", "km", { state = it(state) }, {}, { exits++ })
         } }
         compose.onNodeWithTag("reminder-description").performTextInput("Oil change")
         compose.onNodeWithContentDescription("Back").performClick()
@@ -63,13 +67,14 @@ class AddReminderFormInstrumentedTest {
     fun dateShortcutsAndOptionalDetailsKeepTheirValues() {
         val today = LocalDate.of(2026, 11, 5)
         var state by mutableStateOf(AddReminderUiState(dueDate = today, metric = com.lesicnik.wrench.data.repository.ReminderMetric.DATE))
-        compose.setContent { WrenchTheme {
-            AddReminderContent(state, "2000 Test Test", "km", { state = it(state) }, {}, {}, today)
+        compose.setContent { WrenchTheme(darkTheme = dark, dynamicColor = false) {
+            AddReminderContent(state, "2021 Skoda Superb", "km", { state = it(state) }, {}, {}, today)
         } }
-        compose.onNodeWithText("In 1 month").performClick()
+        compose.onNodeWithText("In 1 month").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(today.plusMonths(1), state.dueDate) }
-        compose.onNodeWithText("In 1 year").performClick()
+        compose.onNodeWithText("In 1 year").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(today.plusYears(1), state.dueDate) }
+        screenshot("add-reminder-date")
         compose.onNodeWithText("Notes and tags (optional)").performScrollTo().performClick()
         compose.onNodeWithTag("reminder-notes").performScrollTo().performTextInput("Approved oil only")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
@@ -83,15 +88,16 @@ class AddReminderFormInstrumentedTest {
     fun defaultMileageFlowNeedsOnlyTheReminderAndPresetBeforeSaving() {
         var state by mutableStateOf(AddReminderUiState(description = "Oil change", startingOdometer = "1500", recordedOdometer = 1500))
         var savedTarget: Int? = null
-        compose.setContent { WrenchTheme {
-            AddReminderContent(state, "2000 Test Test", "km", { state = it(state) }, { savedTarget = state.draft.dueOdometer }, {})
+        compose.setContent { WrenchTheme(darkTheme = dark, dynamicColor = false) {
+            AddReminderContent(state, "2021 Skoda Superb", "km", { state = it(state) }, { savedTarget = state.draft.dueOdometer }, {})
         } }
         compose.onNodeWithText("Mileage").assertIsSelected()
         compose.onNodeWithTag("reminder-starting-odometer").assertDoesNotExist()
         compose.onNodeWithTag("reminder-use-exact-target").assertDoesNotExist()
         compose.onNodeWithTag("reminder-distance-10000").performScrollTo().performClick()
         compose.onNodeWithText("Reminder at 11,500 km").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Based on recorded 1,500 km").assertIsDisplayed()
+        compose.onNodeWithText("Based on recorded 1,500 km").performScrollTo().assertIsDisplayed()
+        screenshot("add-reminder")
         compose.onNodeWithText("Save reminder").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(11500, savedTarget) }
         compose.onNodeWithText("More mileage options").performScrollTo().performClick()
@@ -109,11 +115,23 @@ class AddReminderFormInstrumentedTest {
         val state = AddReminderUiState(description = "Inspection", notes = "Keep my note", requiresCalendarCheck = true,
             errorMessage = "Couldn't confirm whether the reminder was saved. Check the calendar before adding it again.")
         compose.setContent {
-            WrenchTheme { AddReminderContent(state, "2000 Test Test", "km", {}, {}, { checks++ }) }
+            WrenchTheme(darkTheme = dark, dynamicColor = false) { AddReminderContent(state, "2021 Skoda Superb", "km", {}, {}, { checks++ }) }
         }
         compose.onNodeWithText("Check calendar").assertIsEnabled()
         compose.onNodeWithTag("reminder-description").assertTextContains("Inspection")
         compose.onNodeWithText("Check calendar").performClick()
         compose.runOnIdle { assertEquals(1, checks) }
+    }
+
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        // Keyboard and system bar transitions run outside Compose's test clock.
+        android.os.SystemClock.sleep(500)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val directory = instrumentation.targetContext.getExternalFilesDir("ux-test")!!
+        directory.mkdirs()
+        File(directory, "$name-${if (dark) "dark" else "light"}.png").outputStream().use {
+            instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
     }
 }

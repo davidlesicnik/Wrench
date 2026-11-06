@@ -14,12 +14,12 @@ import com.lesicnik.wrench.ui.expenses.*
 import com.lesicnik.wrench.ui.home.*
 import com.lesicnik.wrench.ui.statistics.*
 import com.lesicnik.wrench.ui.theme.WrenchTheme
+import java.io.File
+import java.time.LocalDate
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
-import java.time.LocalDate
 
 @RunWith(AndroidJUnit4::class)
 class EverydayUxInstrumentedTest {
@@ -67,10 +67,11 @@ class EverydayUxInstrumentedTest {
             compose.onNodeWithTag("expense-cost").performTextInput("84.82")
             compose.onNodeWithText("Save fuel").assertIsDisplayed()
             compose.onNodeWithTag("expense-type-selector").assertIsDisplayed()
+            compose.onNodeWithTag("expense-cost").performImeAction()
             closeSoftKeyboard()
+            screenshot("add-expense")
             compose.onNodeWithText("Full tank").performScrollTo().performClick()
             compose.runOnIdle { assertFalse(viewModel.uiState.value.isFillToFull) }
-            screenshot("add-expense")
             compose.onNodeWithText("Notes (optional)").performScrollTo().performClick()
             compose.onNodeWithTag("expense-notes").performScrollTo().performTextInput("Receipt kept")
             closeSoftKeyboard()
@@ -133,6 +134,8 @@ class EverydayUxInstrumentedTest {
 
     private fun screenshot(name: String) {
         compose.waitForIdle()
+        // Keyboard and system bar transitions run outside Compose's test clock.
+        android.os.SystemClock.sleep(500)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val directory = instrumentation.targetContext.getExternalFilesDir("ux-test")!!
         directory.mkdirs()

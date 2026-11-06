@@ -9,9 +9,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -19,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.lesicnik.wrench.ui.components.entryFieldColors
 
 @Composable
 internal fun ReminderMileageFields(
@@ -36,7 +39,7 @@ internal fun ReminderMileageFields(
             value = if (absolute) state.odometer else state.distance,
             onValueChange = { value -> onUpdate { if (absolute) it.copy(odometer = value) else it.copy(distance = value) } },
             modifier = Modifier.fillMaxWidth().testTag(if (absolute) "reminder-odometer" else "reminder-distance"),
-            shape = RoundedCornerShape(14.dp), label = { Text(if (absolute) "At odometer reading" else "Remind me in") },
+            shape = RoundedCornerShape(14.dp), colors = entryFieldColors(), label = { Text(if (absolute) "At odometer reading" else "Remind me in") },
             suffix = { Text(unit) }, singleLine = true, enabled = enabled,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { finishInput() }),
@@ -56,18 +59,24 @@ internal fun ReminderMileageFields(
                 }
             }
         }
-        Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            state.targetOdometer?.let { target ->
-                Text("Reminder at ${reading(target)} $unit", modifier = Modifier.testTag("reminder-target-preview"),
-                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.Flag, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    state.targetOdometer?.let { target ->
+                        Text("Reminder at ${reading(target)} $unit", modifier = Modifier.testTag("reminder-target-preview"),
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Text(when {
+                        absolute -> "Exact odometer target"
+                        state.isLoadingOdometer && current == null -> "Getting the recorded odometer…"
+                        current != null && state.startingReadingEdited -> "Based on ${reading(current)} $unit for this reminder"
+                        current != null -> "Based on recorded ${reading(current)} $unit"
+                        else -> "Recorded odometer unavailable"
+                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            Text(when {
-                absolute -> "Exact odometer target"
-                state.isLoadingOdometer && current == null -> "Getting the recorded odometer…"
-                current != null && state.startingReadingEdited -> "Based on ${reading(current)} $unit for this reminder"
-                current != null -> "Based on recorded ${reading(current)} $unit"
-                else -> "Recorded odometer unavailable"
-            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         TextButton(onClick = { finishInput(); moreOptions = !moreOptions }, enabled = enabled,
             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) {
@@ -86,7 +95,7 @@ internal fun ReminderMileageFields(
                 if (!absolute) {
                     OutlinedTextField(value = state.startingOdometer,
                         onValueChange = { value -> onUpdate { it.copy(startingOdometer = value, startingReadingEdited = true) } },
-                        modifier = Modifier.fillMaxWidth().testTag("reminder-starting-odometer"), shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("reminder-starting-odometer"), shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
                         label = { Text("Starting reading for this reminder") }, suffix = { Text(unit) },
                         enabled = enabled, singleLine = true,
                         isError = state.startingOdometer.isNotBlank() && current?.let { it >= 0 } != true,

@@ -2,12 +2,11 @@ package com.lesicnik.wrench.ui.expenses
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -29,7 +30,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.ExpenseType
+import com.lesicnik.wrench.ui.components.EntryOptionalDetails
+import com.lesicnik.wrench.ui.components.EntrySection
 import com.lesicnik.wrench.ui.components.VehicleTopBar
+import com.lesicnik.wrench.ui.components.entryFieldColors
 import com.lesicnik.wrench.ui.settings.LocalAppPreferences
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.getStyle
@@ -69,6 +73,9 @@ fun AddEditExpenseScreen(
     val finish = KeyboardActions(onDone = { focusManager.clearFocus() })
     val fieldModifier = Modifier.fillMaxWidth()
     val currencyCode = LocalAppPreferences.current.currencyCode
+    val expenseStyle = uiState.expenseType.getStyle()
+    val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val accent = if (darkSurface) lerp(expenseStyle.color, MaterialTheme.colorScheme.onSurface, 0.35f) else expenseStyle.color
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = { VehicleTopBar(if (uiState.isEditMode) "Edit expense" else "Add expense", vehicleName, { if (enabled) back() }) {
@@ -77,22 +84,23 @@ fun AddEditExpenseScreen(
             }
         } },
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.background) {
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!uiState.isEditMode) {
                         Row(Modifier.fillMaxWidth().testTag("expense-type-selector").selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(ExpenseType.FUEL, ExpenseType.SERVICE, ExpenseType.REPAIR, ExpenseType.UPGRADE, ExpenseType.TAX).forEach { type ->
                                 val style = type.getStyle()
+                                val typeColor = if (darkSurface) lerp(style.color, MaterialTheme.colorScheme.onSurface, 0.35f) else style.color
                                 val selected = uiState.expenseType == type
                                 Surface(modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).selectable(
                                     selected = selected, enabled = enabled, role = Role.RadioButton,
                                     onClick = { viewModel.onExpenseTypeChanged(type) }),
                                     shape = RoundedCornerShape(16.dp),
-                                    color = if (selected) style.color.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow) {
+                                    color = if (selected) typeColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow) {
                                     Column(Modifier.heightIn(min = 64.dp).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Icon(style.icon, null, tint = if (selected) style.color else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Icon(style.icon, null, tint = if (selected) typeColor else MaterialTheme.colorScheme.onSurfaceVariant)
                                         Text(style.label, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                                     }
@@ -104,6 +112,10 @@ fun AddEditExpenseScreen(
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         if (uiState.isLoading) CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onPrimary)
+                        if (!uiState.isLoading) {
+                            Icon(Icons.Default.Check, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(if (uiState.isLoading) "Saving…" else if (uiState.isEditMode) "Save changes" else "Save ${uiState.expenseType.getStyle().label.lowercase()}")
                     }
                 }
@@ -113,73 +125,102 @@ fun AddEditExpenseScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 12.dp).testTag("expense-form"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.CalendarMonth, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { focusManager.clearFocus(); showDatePicker = true }, enabled = enabled) {
-                    Text((if (uiState.date == LocalDate.now()) "Today · " else "") + uiState.date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)))
+            EntrySection(
+                title = if (uiState.expenseType == ExpenseType.FUEL) "Fill-up details" else "${expenseStyle.label} details",
+                icon = expenseStyle.icon,
+                accent = accent
+            ) {
+                Surface(onClick = { focusManager.clearFocus(); showDatePicker = true }, enabled = enabled,
+                    shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Default.CalendarMonth, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text((if (uiState.date == LocalDate.now()) "Today · " else "") + uiState.date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)),
+                            Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                        Icon(Icons.Default.ExpandMore, "Change date", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
-                Spacer(Modifier.weight(1f))
                 if (uiState.date != LocalDate.now()) TextButton(onClick = { viewModel.onDateChanged(LocalDate.now()) }, enabled = enabled) { Text("Today") }
+                if (uiState.expenseType != ExpenseType.FUEL) OutlinedTextField(
+                    value = uiState.description, onValueChange = viewModel::onDescriptionChanged,
+                    label = { Text("Description") }, modifier = fieldModifier.testTag("expense-description"), enabled = enabled, singleLine = true,
+                    shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    isError = uiState.fieldErrors["description"] != null,
+                    supportingText = uiState.fieldErrors["description"]?.let { error -> { Text(error) } },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = next)
+                if (uiState.expenseType != ExpenseType.TAX) OutlinedTextField(
+                    value = uiState.odometer, onValueChange = viewModel::onOdometerChanged,
+                    label = { Text("Odometer") }, suffix = { Text(odometerUnit) }, enabled = enabled, singleLine = true,
+                    shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    modifier = fieldModifier.testTag("expense-odometer"), isError = uiState.fieldErrors["odometer"] != null,
+                    supportingText = { (uiState.fieldErrors["odometer"] ?: lastOdometer?.let {
+                        "Previous: ${NumberFormat.getIntegerInstance().format(it)} $odometerUnit"
+                    })?.let { Text(it) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), keyboardActions = next)
+                if (uiState.expenseType == ExpenseType.FUEL) OutlinedTextField(
+                    value = uiState.fuelConsumed, onValueChange = viewModel::onFuelConsumedChanged,
+                    label = { Text("Fuel amount") }, suffix = { Text("L") }, enabled = enabled, singleLine = true,
+                    shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    modifier = fieldModifier.testTag("expense-fuel"), isError = uiState.fieldErrors["fuel"] != null,
+                    supportingText = uiState.fieldErrors["fuel"]?.let { error -> { Text(error) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), keyboardActions = next)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                OutlinedTextField(value = uiState.cost, onValueChange = viewModel::onCostChanged,
+                    label = { Text("Total paid") }, suffix = { Text(currencyCode) },
+                    placeholder = { Text("0.00") },
+                    shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    enabled = enabled, singleLine = true,
+                    modifier = fieldModifier.testTag("expense-cost"), isError = uiState.fieldErrors["cost"] != null,
+                    supportingText = uiState.fieldErrors["cost"]?.let { error -> { Text(error) } },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = if (showNotes) ImeAction.Next else ImeAction.Done),
+                    keyboardActions = if (showNotes) next else finish)
             }
-            if (uiState.expenseType != ExpenseType.FUEL) OutlinedTextField(
-                value = uiState.description, onValueChange = viewModel::onDescriptionChanged,
-                label = { Text("Description") }, modifier = fieldModifier.testTag("expense-description"), enabled = enabled, singleLine = true,
-                isError = uiState.fieldErrors["description"] != null,
-                supportingText = uiState.fieldErrors["description"]?.let { error -> { Text(error) } },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), keyboardActions = next)
-            if (uiState.expenseType != ExpenseType.TAX) OutlinedTextField(
-                value = uiState.odometer, onValueChange = viewModel::onOdometerChanged,
-                label = { Text("Odometer") }, suffix = { Text(odometerUnit) }, enabled = enabled, singleLine = true,
-                modifier = fieldModifier.testTag("expense-odometer"), isError = uiState.fieldErrors["odometer"] != null,
-                supportingText = { (uiState.fieldErrors["odometer"] ?: lastOdometer?.let {
-                    "Previous: ${NumberFormat.getIntegerInstance().format(it)} $odometerUnit"
-                })?.let { Text(it) } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next), keyboardActions = next)
-            if (uiState.expenseType == ExpenseType.FUEL) OutlinedTextField(
-                value = uiState.fuelConsumed, onValueChange = viewModel::onFuelConsumedChanged,
-                label = { Text("Fuel amount") }, suffix = { Text("L") }, enabled = enabled, singleLine = true,
-                modifier = fieldModifier.testTag("expense-fuel"), isError = uiState.fieldErrors["fuel"] != null,
-                supportingText = uiState.fieldErrors["fuel"]?.let { error -> { Text(error) } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), keyboardActions = next)
-            OutlinedTextField(value = uiState.cost, onValueChange = viewModel::onCostChanged,
-                label = { Text("Total paid") }, suffix = { Text(currencyCode) }, enabled = enabled, singleLine = true,
-                modifier = fieldModifier.testTag("expense-cost"), isError = uiState.fieldErrors["cost"] != null,
-                supportingText = uiState.fieldErrors["cost"]?.let { error -> { Text(error) } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = if (showNotes) ImeAction.Next else ImeAction.Done),
-                keyboardActions = if (showNotes) next else finish)
             if (uiState.expenseType == ExpenseType.FUEL) {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).toggleable(value = uiState.isFillToFull, enabled = enabled, role = Role.Switch, onValueChange = viewModel::onFillToFullChanged).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Full tank", style = MaterialTheme.typography.bodyLarge)
-                        Text("Filled completely at this stop", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = uiState.isFillToFull, onCheckedChange = null, enabled = enabled)
-                }
-                TextButton(onClick = { focusManager.clearFocus(); showFuelOptions = !showFuelOptions }, enabled = enabled) {
-                    Text("Fill-up options")
-                    Icon(if (showFuelOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
-                }
-                AnimatedVisibility(showFuelOptions) {
-                    Column {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = uiState.isMissedFuelUp, onCheckedChange = viewModel::onMissedFuelUpChanged, enabled = enabled)
-                            Text("Previous fill-up not recorded")
+                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).toggleable(value = uiState.isFillToFull,
+                            enabled = enabled, role = Role.Switch, onValueChange = viewModel::onFillToFullChanged).padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Full tank", style = MaterialTheme.typography.titleSmall)
+                                Text("Filled completely at this stop", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = uiState.isFillToFull, onCheckedChange = null, enabled = enabled)
                         }
-                        Text("Use this if you skipped recording a stop. Consumption won't be calculated across that gap.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        TextButton(onClick = { focusManager.clearFocus(); showFuelOptions = !showFuelOptions }, enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
+                            Text("Fill-up options", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                            Icon(if (showFuelOptions) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp))
+                        }
+                        AnimatedVisibility(showFuelOptions) {
+                            Column(Modifier.padding(bottom = 8.dp)) {
+                                Row(Modifier.fillMaxWidth().toggleable(value = uiState.isMissedFuelUp, enabled = enabled,
+                                    role = Role.Checkbox, onValueChange = viewModel::onMissedFuelUpChanged), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = uiState.isMissedFuelUp, onCheckedChange = null, enabled = enabled)
+                                    Text("Previous fill-up not recorded", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Text("Use this if you skipped recording a stop. Consumption won't be calculated across that gap.",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                     }
                 }
             }
-            if (uiState.expenseType == ExpenseType.TAX) Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = uiState.isRecurring, onCheckedChange = viewModel::onRecurringChanged, enabled = enabled)
-                Text("Recurring expense")
+            if (uiState.expenseType == ExpenseType.TAX) Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLowest) {
+                Row(Modifier.fillMaxWidth().toggleable(value = uiState.isRecurring, enabled = enabled,
+                    role = Role.Checkbox, onValueChange = viewModel::onRecurringChanged).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = uiState.isRecurring, onCheckedChange = null, enabled = enabled)
+                    Text("Recurring expense", style = MaterialTheme.typography.bodyLarge)
+                }
             }
-            TextButton(onClick = { focusManager.clearFocus(); showNotes = !showNotes }, enabled = enabled) {
-                Text(if (uiState.notes.isBlank()) "Notes (optional)" else "Notes added")
-                Icon(if (showNotes) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
-            }
-            AnimatedVisibility(showNotes) {
+            EntryOptionalDetails(
+                title = if (uiState.notes.isBlank()) "Notes (optional)" else "Notes added",
+                expanded = showNotes, enabled = enabled,
+                onClick = { focusManager.clearFocus(); showNotes = !showNotes }
+            ) {
                 OutlinedTextField(value = uiState.notes, onValueChange = viewModel::onNotesChanged, label = { Text("Notes") },
+                    shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
                     modifier = fieldModifier.testTag("expense-notes"), minLines = 2, maxLines = 4, enabled = enabled,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = finish)
             }
