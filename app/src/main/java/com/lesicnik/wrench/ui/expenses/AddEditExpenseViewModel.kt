@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.ui.expenses
 
+import com.lesicnik.wrench.data.repository.ReminderMetric
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -8,14 +9,23 @@ import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
+import com.lesicnik.wrench.data.repository.Reminder
 import com.lesicnik.wrench.data.sync.ExpenseSyncState
+import com.lesicnik.wrench.data.sync.ReminderValues
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 
 data class AddEditExpenseUiState(
+    val isLinkedService: Boolean = false,
+    val linkedReminder: Reminder? = null,
+    val afterRecording: String = "UNCHANGED",
+    val nextDueDate: String = "",
+    val nextDueOdometer: String = "",
+    val additionalDistance: Boolean = false,
+    val confirmReminderRemoval: Boolean = false,
     val initialDate: LocalDate = LocalDate.now(),
     val fieldErrors: Map<String, String> = emptyMap(),
     val expenseType: ExpenseType = ExpenseType.FUEL,
@@ -65,14 +75,32 @@ class AddEditExpenseViewModel(
     private val credentialsRepository: CredentialsRepository,
     private val expenseRepository: ExpenseRepository,
     private val vehicleId: Int,
-    serviceDescription: String = ""
+    serviceDescription: String = "",
+    private val reminderId: Int? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddEditExpenseUiState(
+        isLinkedService = reminderId != null,
         expenseType = if (serviceDescription.isBlank()) ExpenseType.FUEL else ExpenseType.SERVICE,
         description = serviceDescription
     ))
     val uiState: StateFlow<AddEditExpenseUiState> = _uiState.asStateFlow()
+
+    init {
+        if (reminderId != null) viewModelScope.launch {
+            val c = credentialsRepository.getCredentials() ?: return@launch
+            val reminder = expenseRepository.linkedReminder(c, vehicleId, reminderId)
+            _uiState.value = _uiState.value.copy(linkedReminder = reminder,
+                errorMessage = if (reminder == null) "Reminder unavailable. Refresh Maintenance before recording service." else null)
+        }
+    }
+
+    fun afterRecording(value: String) { _uiState.value = _uiState.value.copy(afterRecording = value) }
+    fun nextDueDate(value: String) { _uiState.value = _uiState.value.copy(nextDueDate = value) }
+    fun nextDueOdometer(value: String) { _uiState.value = _uiState.value.copy(nextDueOdometer = value.filter(Char::isDigit).take(10)) }
+    fun additionalDistance(value: Boolean) { _uiState.value = _uiState.value.copy(additionalDistance = value) }
+    fun dismissReminderRemoval() { _uiState.value = _uiState.value.copy(confirmReminderRemoval = false) }
+    fun confirmReminderRemoval() { _uiState.value = _uiState.value.copy(confirmReminderRemoval = false); saveExpense(true) }
 
     fun initializeForEdit(expenseId: Int, expenseType: ExpenseType) {
         val expense = expenseRepository.getExpenseById(vehicleId, expenseId, expenseType)
@@ -99,6 +127,7 @@ class AddEditExpenseViewModel(
     }
 
     fun onExpenseTypeChanged(type: ExpenseType) {
+        if (reminderId != null) return
         _uiState.value = _uiState.value.copy(expenseType = type, fieldErrors = emptyMap())
     }
 
@@ -289,10 +318,10 @@ class AddEditExpenseViewModel(
         }
     }
 
-    fun saveExpense() {
+    fun saveExpense(removalConfirmed: Boolean = false) {
         val state = _uiState.value
 
-        if (state.isLoading || state.isDeleting || state.isResolvingConflict) return
+        if (state.isLoading || state.isSaved || state.isDeleting || state.isResolvingConflict) return
         val cost = getCostAsDecimal()
         val errors = mutableMapOf<String, String>()
         if (cost == null || cost <= 0 || !cost.isFinite()) errors["cost"] = "Enter a cost greater than zero (for example 84.82)"
@@ -310,8 +339,28 @@ class AddEditExpenseViewModel(
             return
         }
 
+        var reminderTarget: ReminderValues? = null
+        if (reminderId != null) {
+            val reminder = state.linkedReminder
+            if (reminder == null) { _uiState.value = state.copy(errorMessage = "Wait for the reminder to load."); return }
+            if (state.afterRecording == "SCHEDULE") {
+                val metric = reminder.metric
+                val dueDate = if (metric != ReminderMetric.ODOMETER)
+                    runCatching { LocalDate.parse(state.nextDueDate) }.getOrNull() else null
+                val input = state.nextDueOdometer.toIntOrNull()
+                val target = if (state.additionalDistance && input != null) {
+                    state.odometer.toIntOrNull()?.let { reading -> (reading.toLong() + input).takeIf { it <= Int.MAX_VALUE }?.toInt() }
+                } else input
+                reminderTarget = ReminderValues.from(reminder).copy(dueDate = dueDate?.toString(), dueOdometer = target)
+                val error = reminderTarget.draft().validationError()
+                if (error != null) { _uiState.value = state.copy(errorMessage = error); return }
+            }
+            if (state.afterRecording == "REMOVE" && !removalConfirmed) {
+                _uiState.value = state.copy(confirmReminderRemoval = true); return
+            }
+        }
+        _uiState.value = state.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch {
-            _uiState.value = state.copy(isLoading = true, errorMessage = null)
 
             val credentials = credentialsRepository.getCredentials()
             if (credentials == null) {
@@ -354,7 +403,11 @@ class AddEditExpenseViewModel(
                     fuelConsumed = getFuelConsumedAsDecimal(),
                     isFillToFull = state.isFillToFull,
                     isMissedFuelUp = state.isMissedFuelUp,
-                    isRecurring = state.isRecurring
+                    isRecurring = state.isRecurring,
+                    reminderId = reminderId,
+                    reminderTarget = reminderTarget,
+                    removeReminder = state.afterRecording == "REMOVE",
+                    originalReminder = state.linkedReminder
                 )
             }
 
@@ -379,11 +432,12 @@ class AddEditExpenseViewModel(
         private val credentialsRepository: CredentialsRepository,
         private val expenseRepository: ExpenseRepository,
         private val vehicleId: Int,
-        private val serviceDescription: String = ""
+        private val serviceDescription: String = "",
+        private val reminderId: Int? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AddEditExpenseViewModel(credentialsRepository, expenseRepository, vehicleId, serviceDescription) as T
+            return AddEditExpenseViewModel(credentialsRepository, expenseRepository, vehicleId, serviceDescription, reminderId) as T
         }
     }
 }

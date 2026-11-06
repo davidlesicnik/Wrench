@@ -1,6 +1,5 @@
 package com.lesicnik.wrench.ui.home
 
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -25,21 +24,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.Expense
-import com.lesicnik.wrench.data.sync.ExpenseSyncState
-import com.lesicnik.wrench.ui.components.VehicleTopBar
-import com.lesicnik.wrench.ui.components.VehicleNavigationBar
-import com.lesicnik.wrench.ui.components.AddRecordButton
-import com.lesicnik.wrench.ui.expenses.ExpenseDetailSheet
-import com.lesicnik.wrench.data.repository.maintenanceAgenda
 import com.lesicnik.wrench.data.repository.ReminderUrgency
+import com.lesicnik.wrench.data.repository.maintenanceAgenda
+import com.lesicnik.wrench.data.sync.ExpenseSyncState
 import com.lesicnik.wrench.ui.calendar.distanceLabel
 import com.lesicnik.wrench.ui.calendar.relativeDate
+import com.lesicnik.wrench.ui.components.AddRecordButton
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.ErrorContent
+import com.lesicnik.wrench.ui.components.VehicleNavigationBar
+import com.lesicnik.wrench.ui.components.VehicleTopBar
+import com.lesicnik.wrench.ui.expenses.ExpenseDetailSheet
 import com.lesicnik.wrench.ui.settings.rememberCurrencyFormatter
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
@@ -389,6 +389,9 @@ private fun NextMaintenanceCard(state: HomeUiState, unit: String, onClick: () ->
             }
             if (overdue > 0) Text("$overdue overdue", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.error)
+            state.maintenance.values.filter { it.savedLocally }.map { it.label }.distinct().forEach {
+                Text("Saved on this device · $it", style = MaterialTheme.typography.labelMedium)
+            }
             if (next != null) {
                 Text(next.description, style = MaterialTheme.typography.titleSmall)
                 Text(listOfNotNull(next.dueDate?.let { relativeDate(it, LocalDate.now()) },

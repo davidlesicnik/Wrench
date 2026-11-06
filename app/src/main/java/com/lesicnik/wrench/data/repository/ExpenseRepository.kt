@@ -17,26 +17,30 @@ import com.lesicnik.wrench.data.repository.offline.parseRemoteExpenseSnapshot
 import com.lesicnik.wrench.data.repository.offline.toDomain
 import com.lesicnik.wrench.data.repository.offline.toJson
 import com.lesicnik.wrench.data.sync.ExpenseSyncState
+import com.lesicnik.wrench.data.sync.MaintenanceCoordinator
 import com.lesicnik.wrench.data.sync.OfflineSyncEngine
+import com.lesicnik.wrench.data.sync.ReminderValues
 import com.lesicnik.wrench.data.sync.SyncOperationType
 import com.lesicnik.wrench.data.sync.SyncWorkScheduler
-import kotlinx.coroutines.flow.*
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 data class ExpenseSyncSummary(
     val lastSyncedAt: Long? = null,
     val pendingCount: Int = 0,
     val problemCount: Int = 0,
-    val refreshError: String? = null
+    val refreshError: String? = null,
+    val unownedCount: Int = 0
 )
 
 class ExpenseRepository(
@@ -47,6 +51,8 @@ class ExpenseRepository(
     private val fuelStatsCalculator: FuelStatsCalculator = FuelStatsCalculator(),
     private val syncEngine: OfflineSyncEngine = OfflineSyncEngine(database)
 ) {
+
+    val maintenance = MaintenanceCoordinator(database)
 
     private val refreshErrors = MutableStateFlow<Map<Int, Pair<Long, String>>>(emptyMap())
     private val sessionRefreshes = ConcurrentHashMap<String, CompletableDeferred<ApiResult<Unit>>>()
@@ -112,9 +118,12 @@ class ExpenseRepository(
         refreshErrors
     ) { meta, pending, expenses, errors ->
         val failure = errors[vehicleId]
+        val credentials = CredentialsRepository(appContext).getCredentials()
+        val key = credentials?.takeIf { it.serverUrl == serverUrl }?.let(ReminderRepository::accountKey)
         ExpenseSyncSummary(
             lastSyncedAt = meta?.lastFullSyncAt,
-            pendingCount = pending.size,
+            pendingCount = pending.count { it.accountKey == key },
+            unownedCount = pending.count { it.accountKey == null },
             problemCount = expenses.count { it.syncState == ExpenseSyncState.CONFLICT.name || it.syncState == ExpenseSyncState.SYNC_ERROR.name },
             refreshError = failure?.takeIf { it.first > (meta?.lastFullSyncAt ?: 0L) }?.second
         )
@@ -132,10 +141,21 @@ class ExpenseRepository(
         cache.invalidate(vehicleId)
     }
 
+    suspend fun claimLegacyOperations(serverUrl: String, apiKey: String, vehicleId: Int) {
+        MaintenanceCoordinator.writeMutex.withLock {
+            database.withTransaction {
+                val key = ReminderRepository.accountKey(Credentials(serverUrl, apiKey))
+                database.pendingSyncOpDao().getPendingOperations(serverUrl)
+                    .filter { it.vehicleRemoteId == vehicleId && it.accountKey == null }
+                    .forEach { database.pendingSyncOpDao().updateOperation(it.copy(accountKey = key)) }
+            }
+        }
+    }
+
     suspend fun clearAllCaches() = withContext(Dispatchers.IO) {
         cache.clearAll()
         refreshErrors.value = emptyMap()
-        database.clearAllTables()
+        // Queued work and confirmed receipts survive logout. Credentials remain in secure preferences.
     }
 
     suspend fun getExpenses(
@@ -175,6 +195,9 @@ class ExpenseRepository(
         }
     }
 
+    suspend fun linkedReminder(c: Credentials, vehicleId: Int, reminderId: Int): Reminder? =
+        ReminderRepository(database).cached(c, vehicleId)?.reminders?.firstOrNull { it.id == reminderId }
+
     suspend fun addExpense(
         serverUrl: String,
         apiKey: String,
@@ -188,7 +211,11 @@ class ExpenseRepository(
         fuelConsumed: Double? = null,
         isFillToFull: Boolean = false,
         isMissedFuelUp: Boolean = false,
-        isRecurring: Boolean = false
+        isRecurring: Boolean = false,
+        reminderId: Int? = null,
+        reminderTarget: ReminderValues? = null,
+        removeReminder: Boolean = false,
+        originalReminder: Reminder? = null
     ): ApiResult<Unit> {
         return try {
             val now = System.currentTimeMillis()
@@ -214,10 +241,16 @@ class ExpenseRepository(
                 lastSyncError = null
             )
 
-            database.withTransaction {
+            if (reminderId != null) {
+                val credentials = Credentials(serverUrl, apiKey)
+                val reminder = originalReminder ?: ReminderRepository(database).cached(credentials, vehicleId)?.reminders?.firstOrNull { it.id == reminderId }
+                    ?: return ApiResult.Error("Reminder unavailable. Open Maintenance and refresh before recording this service.")
+                maintenance.recordService(credentials, reminder, entity, reminderTarget, removeReminder)
+            } else database.withTransaction {
                 val localId = database.expenseDao().insertExpense(entity).toInt()
                 enqueueOperation(
                     serverUrl = serverUrl,
+                    apiKey = apiKey,
                     vehicleId = vehicleId,
                     localExpenseId = localId,
                     opType = SyncOperationType.CREATE,
@@ -226,7 +259,7 @@ class ExpenseRepository(
             }
 
             invalidateCache(vehicleId)
-            SyncWorkScheduler.enqueueImmediateSync(appContext)
+            runCatching { SyncWorkScheduler.enqueueImmediateSync(appContext) }
             ApiResult.Success(Unit)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
@@ -244,6 +277,12 @@ class ExpenseRepository(
             val entity = database.expenseDao().getByLocalId(expenseId)
                 ?: return ApiResult.Error("Expense not found")
 
+            if (database.maintenanceDao().upload(expenseId) != null) {
+                if (maintenance.deleteUnsent(Credentials(serverUrl, apiKey), expenseId)) {
+                    invalidateCache(vehicleId)
+                    return ApiResult.Success(Unit)
+                }
+            }
             database.withTransaction {
                 if (entity.remoteId == null) {
                     database.pendingSyncOpDao().deleteForExpense(serverUrl, entity.localId)
@@ -267,6 +306,7 @@ class ExpenseRepository(
                     database.pendingSyncOpDao().deleteForExpense(serverUrl, entity.localId)
                     enqueueOperation(
                         serverUrl = serverUrl,
+                        apiKey = apiKey,
                         vehicleId = vehicleId,
                         localExpenseId = entity.localId,
                         opType = SyncOperationType.DELETE,
@@ -276,7 +316,7 @@ class ExpenseRepository(
             }
 
             invalidateCache(vehicleId)
-            SyncWorkScheduler.enqueueImmediateSync(appContext)
+            runCatching { SyncWorkScheduler.enqueueImmediateSync(appContext) }
             ApiResult.Success(Unit)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
@@ -332,6 +372,12 @@ class ExpenseRepository(
                 isDeletedLocal = false
             )
 
+            if (database.maintenanceDao().upload(originalExpenseId) != null) {
+                maintenance.editUnsent(Credentials(serverUrl, apiKey), updatedEntity)
+                invalidateCache(vehicleId)
+                runCatching { SyncWorkScheduler.enqueueImmediateSync(appContext) }
+                return ApiResult.Success(Unit)
+            }
             database.withTransaction {
                 database.expenseDao().updateExpense(updatedEntity)
                 database.pendingSyncOpDao().deleteForExpense(serverUrl, existing.localId)
@@ -339,6 +385,7 @@ class ExpenseRepository(
                 if (existing.remoteId == null) {
                     enqueueOperation(
                         serverUrl = serverUrl,
+                        apiKey = apiKey,
                         vehicleId = vehicleId,
                         localExpenseId = existing.localId,
                         opType = SyncOperationType.CREATE,
@@ -353,6 +400,7 @@ class ExpenseRepository(
 
                     enqueueOperation(
                         serverUrl = serverUrl,
+                        apiKey = apiKey,
                         vehicleId = vehicleId,
                         localExpenseId = existing.localId,
                         opType = SyncOperationType.UPDATE,
@@ -372,7 +420,7 @@ class ExpenseRepository(
             }
 
             invalidateCache(vehicleId)
-            SyncWorkScheduler.enqueueImmediateSync(appContext)
+            runCatching { SyncWorkScheduler.enqueueImmediateSync(appContext) }
             ApiResult.Success(Unit)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
@@ -442,7 +490,7 @@ class ExpenseRepository(
             }
 
             invalidateCache(vehicleId)
-            SyncWorkScheduler.enqueueImmediateSync(appContext)
+            runCatching { SyncWorkScheduler.enqueueImmediateSync(appContext) }
             ApiResult.Success(Unit)
         } catch (e: Exception) {
             ApiResult.Error(e.message ?: "Unknown error occurred")
@@ -530,6 +578,7 @@ class ExpenseRepository(
 
     private suspend fun enqueueOperation(
         serverUrl: String,
+        apiKey: String? = null,
         vehicleId: Int,
         localExpenseId: Int,
         opType: SyncOperationType,
@@ -545,13 +594,19 @@ class ExpenseRepository(
                 baseFingerprint = payload?.baseFingerprint,
                 createdAt = System.currentTimeMillis(),
                 attemptCount = 0,
-                lastError = null
+                lastError = null,
+                accountKey = (apiKey?.let { Credentials(serverUrl, it) } ?: CredentialsRepository(appContext).getCredentials()?.takeIf { it.serverUrl == serverUrl })?.let(ReminderRepository::accountKey)
             )
         )
     }
 
     private suspend fun readLocalExpenses(serverUrl: String, vehicleId: Int): List<Expense> {
-        val entities = database.expenseDao().getVisibleExpenses(serverUrl, vehicleId)
+        val credentials = CredentialsRepository(appContext).getCredentials()
+        val key = credentials?.takeIf { it.serverUrl == serverUrl }?.let(ReminderRepository::accountKey)
+        val visible = database.expenseDao().getVisibleExpenses(serverUrl, vehicleId)
+            .filter { it.accountKey == null || it.accountKey == key }
+        val linkedKeys = visible.filter { it.accountKey != null && it.remoteId != null }.map { it.type to it.remoteId }.toSet()
+        val entities = visible.filter { it.accountKey != null || (it.type to it.remoteId) !in linkedKeys }
         if (entities.isEmpty()) {
             return emptyList()
         }

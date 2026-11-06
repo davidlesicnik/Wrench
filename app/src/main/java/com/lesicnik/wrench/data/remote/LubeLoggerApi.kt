@@ -17,6 +17,34 @@ import retrofit2.http.Query
 
 interface LubeLoggerApi {
 
+    @FormUrlEncoded
+    @retrofit2.http.PUT("api/vehicle/reminders/update")
+    suspend fun updateReminder(
+        @Header("x-api-key") apiKey: String,
+        @Field("id") id: Int,
+        @Field("description") description: String,
+        @Field("metric") metric: String,
+        @Field("dueDate") dueDate: String?,
+        @Field("dueOdometer") dueOdometer: Int?,
+        @Field("notes") notes: String,
+        @Field("tags") tags: String
+    ): Response<ReminderWriteResponse>
+
+    @DELETE("api/vehicle/reminders/delete")
+    suspend fun deleteReminder(@Header("x-api-key") apiKey: String, @Query("id") id: Int): Response<ReminderWriteResponse>
+
+    @FormUrlEncoded
+    @POST("api/vehicle/servicerecords/add")
+    suspend fun recordMaintenanceService(
+        @Header("x-api-key") apiKey: String,
+        @Field("vehicleId") vehicleId: Int,
+        @Field("date") date: String,
+        @Field("odometer") odometer: String,
+        @Field("description") description: String,
+        @Field("cost") cost: String,
+        @Field("notes") notes: String
+    ): Response<ReminderWriteResponse>
+
     @GET("api/vehicle/odometerrecords/latest")
     suspend fun getLatestOdometer(
         @Header("x-api-key") apiKey: String,

@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.data.sync
 
+import com.lesicnik.wrench.data.repository.ReminderRepository
 import androidx.room.withTransaction
 import com.lesicnik.wrench.data.local.WrenchDatabase
 import com.lesicnik.wrench.data.local.entity.ExpenseEntity
@@ -10,6 +11,8 @@ import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.remote.Vehicle
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
+import com.lesicnik.wrench.data.repository.Credentials
+import com.lesicnik.wrench.data.repository.Reminder
 import com.lesicnik.wrench.data.repository.expense.ExpenseMapper
 import com.lesicnik.wrench.data.repository.expense.ExpenseRecordBundle
 import com.lesicnik.wrench.data.repository.expense.ExpenseRemoteDataSource
@@ -19,20 +22,24 @@ import com.lesicnik.wrench.data.repository.offline.parseExpenseOperationPayload
 import com.lesicnik.wrench.data.repository.offline.toEntity
 import com.lesicnik.wrench.data.repository.offline.toJson as entityToJson
 import com.lesicnik.wrench.data.repository.offline.toJson as snapshotToJson
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import kotlin.math.abs
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class OfflineSyncEngine(
     private val database: WrenchDatabase,
     private val remoteDataSource: ExpenseRemoteDataSource = ExpenseRemoteDataSource(),
-    private val mapper: ExpenseMapper = ExpenseMapper()
+    private val mapper: ExpenseMapper = ExpenseMapper(),
+    private val maintenanceCoordinator: MaintenanceCoordinator = MaintenanceCoordinator(database),
+    private val loadVehicles: suspend (String, String) -> retrofit2.Response<List<Vehicle>> = { server, key ->
+        NetworkModule.getApi(server).getVehicles(key)
+    }
 ) {
 
     companion object {
         // Guard sync execution process-wide so worker and UI-triggered sync cannot overlap.
-        private val syncMutex = Mutex()
+        private val syncMutex = MaintenanceCoordinator.writeMutex
     }
 
     suspend fun syncServer(serverUrl: String, apiKey: String, preferredVehicleIds: List<Int> = emptyList()): ApiResult<Unit> {
@@ -53,6 +60,11 @@ class OfflineSyncEngine(
                 }
             }
 
+            // A failed read-only connection check must leave unsent creations queued.
+            // Otherwise opening Maintenance while offline would misclassify them as uncertain writes.
+            if (remoteVehiclesResult is ApiResult.Success) {
+                maintenanceCoordinator.syncLocked(Credentials(serverUrl, apiKey))
+            }
             val pendingOps = database.pendingSyncOpDao().getPendingOperations(serverUrl)
             vehicleIds += pendingOps.map { it.vehicleRemoteId }
 
@@ -70,7 +82,7 @@ class OfflineSyncEngine(
 
     private suspend fun refreshVehiclesFromRemote(serverUrl: String, apiKey: String): ApiResult<List<Vehicle>> {
         return try {
-            val response = NetworkModule.getApi(serverUrl).getVehicles(apiKey)
+            val response = loadVehicles(serverUrl, apiKey)
             if (!response.isSuccessful) {
                 ApiResult.Error("Failed to fetch vehicles: ${response.code()}")
             } else {
@@ -97,19 +109,14 @@ class OfflineSyncEngine(
             .let {
                 when (it) {
                     is ApiResult.Success -> it.data
-                    is ApiResult.Error -> {
-                        if (pendingDao.getPendingOperations(serverUrl).none { op -> op.vehicleRemoteId == vehicleRemoteId }) {
-                            emptyList()
-                        } else {
-                            return ApiResult.Error(it.message)
-                        }
-                    }
+                    is ApiResult.Error -> return ApiResult.Error(it.message)
                 }
             }
 
         val remoteByKey = remoteSnapshots.associateBy { it.type.name to it.remoteId }
+        val accountKey = ReminderRepository.accountKey(Credentials(serverUrl, apiKey))
         val pendingOps = pendingDao.getPendingOperations(serverUrl)
-            .filter { it.vehicleRemoteId == vehicleRemoteId }
+            .filter { it.vehicleRemoteId == vehicleRemoteId && it.accountKey == accountKey }
 
         for (op in pendingOps) {
             val entity = expenseDao.getByLocalId(op.expenseLocalId)
@@ -286,7 +293,7 @@ class OfflineSyncEngine(
             .filter { it.vehicleRemoteId == vehicleRemoteId }
             .associateBy { it.expenseLocalId }
 
-        val localExpenses = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId)
+        val localExpenses = expenseDao.getVisibleExpenses(serverUrl, vehicleRemoteId).filter { it.accountKey == null }
         val nowForReconcile = System.currentTimeMillis()
         val consumedRemoteKeys = mutableSetOf<Pair<String, Int>>()
 
@@ -333,6 +340,10 @@ class OfflineSyncEngine(
                 remoteId = remote.remoteId
             )
 
+            if (existingByRemote?.accountKey != null) {
+                consumedRemoteKeys += key
+                continue
+            }
             if (existingByRemote != null) {
                 expenseDao.updateExpense(existingByRemote.mergeFromRemote(remote, nowForReconcile))
                 consumedRemoteKeys += key

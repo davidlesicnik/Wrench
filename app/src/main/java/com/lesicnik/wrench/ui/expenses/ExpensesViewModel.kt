@@ -8,12 +8,12 @@ import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.ApiResult
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
+import com.lesicnik.wrench.data.repository.ExpenseSyncSummary
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import com.lesicnik.wrench.data.repository.ExpenseSyncSummary
 
 data class ExpensesUiState(
     val expenses: List<Expense> = emptyList(),
@@ -107,6 +107,14 @@ class ExpensesViewModel(
     fun resetFilters() {
         _uiState.value = _uiState.value.copy(searchQuery = "", dateFrom = null, dateTo = null,
             selectedFilters = ExpenseType.entries.toSet())
+    }
+
+    fun claimLegacyOperations() {
+        viewModelScope.launch {
+            val c = credentialsRepository.getCredentials() ?: return@launch
+            expenseRepository.claimLegacyOperations(c.serverUrl, c.apiKey, vehicleId)
+            loadExpenses(forceRefresh = true)
+        }
     }
 
     fun clearError() {

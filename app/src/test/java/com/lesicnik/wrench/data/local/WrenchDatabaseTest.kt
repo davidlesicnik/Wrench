@@ -45,6 +45,10 @@ class WrenchDatabaseTest {
         database.close()
         // Recreate the v1 schema by removing only the new calendar tables.
         SQLiteDatabase.openDatabase(context.getDatabasePath(DATABASE_NAME).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("DROP TABLE reminder_operations")
+            it.execSQL("DROP TABLE service_uploads")
+            it.execSQL("ALTER TABLE expenses DROP COLUMN accountKey")
+            it.execSQL("ALTER TABLE pending_sync_ops DROP COLUMN accountKey")
             it.execSQL("DROP TABLE reminders")
             it.execSQL("DROP TABLE reminder_sync")
             it.version = 1
@@ -53,6 +57,24 @@ class WrenchDatabaseTest {
         assertEquals(expense().copy(localId = localId), database.expenseDao().getByLocalId(localId))
         assertEquals(1, database.pendingSyncOpDao().countPending(SERVER_URL))
         assertTrue(database.reminderDao().getReminders("account", 1).isEmpty())
+    }
+
+    @Test
+    fun `maintenance migration preserves v2 expenses and queued changes`() = runBlocking {
+        val localId = database.expenseDao().insertExpense(expense()).toInt()
+        database.pendingSyncOpDao().insertOperation(operation(localId))
+        database.close()
+        SQLiteDatabase.openDatabase(context.getDatabasePath(DATABASE_NAME).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("DROP TABLE reminder_operations")
+            it.execSQL("DROP TABLE service_uploads")
+            it.execSQL("ALTER TABLE expenses DROP COLUMN accountKey")
+            it.execSQL("ALTER TABLE pending_sync_ops DROP COLUMN accountKey")
+            it.version = 2
+        }
+        database = openDatabase()
+        assertEquals(expense().copy(localId = localId), database.expenseDao().getByLocalId(localId))
+        assertEquals(1, database.pendingSyncOpDao().countPending(SERVER_URL))
+        assertTrue(database.maintenanceDao().reminders("account").isEmpty())
     }
 
     @Test
@@ -96,7 +118,7 @@ class WrenchDatabaseTest {
 
     private fun openDatabase(): WrenchDatabase =
         Room.databaseBuilder(context, WrenchDatabase::class.java, DATABASE_NAME)
-            .addMigrations(WrenchDatabase.MIGRATION_1_2).build()
+            .addMigrations(WrenchDatabase.MIGRATION_1_2, WrenchDatabase.MIGRATION_2_3).build()
 
     private fun expense() = ExpenseEntity(
         serverUrl = SERVER_URL,

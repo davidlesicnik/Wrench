@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -17,12 +19,13 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.repository.*
+import com.lesicnik.wrench.data.sync.ReminderValues
 import com.lesicnik.wrench.ui.components.*
 import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
-import kotlinx.coroutines.launch
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlinx.coroutines.launch
 
 @Composable
 fun CalendarScreen(
@@ -43,7 +46,27 @@ fun CalendarScreen(
         createdLocation = createdLocation, onCreationShown = {
             viewModel.refreshAfterCreation()
             onCreationShown()
-        }, onManage = state.serverUrl?.let { url -> { uriHandler.openUri(url) } }, onRecordService = onRecordService)
+        }, onManage = state.serverUrl?.let { url -> { uriHandler.openUri(url) } }, onRecordService = onRecordService,
+        onChange = viewModel::change, onCancelChange = viewModel::cancel, onResolve = viewModel::resolve, onReview = viewModel::loadMatches)
+    state.reviewingExpenseId?.let { expenseId ->
+        var confirmRetry by remember { mutableStateOf(false) }
+        AlertDialog(onDismissRequest = viewModel::dismissReview, title = { Text("Review service upload") },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("The service may already exist. Select a matching server record, or review LubeLogger before explicitly retrying. Retrying can create a duplicate.")
+                if (state.serviceMatches.isEmpty()) Text("No matching server records found.")
+                state.serviceMatches.forEach { record ->
+                    TextButton(onClick = { viewModel.reviewUpload(expenseId, record.id) }) {
+                        Text("Use #${record.id} · ${record.date} · ${record.odometer ?: "—"} · ${record.cost}")
+                    }
+                }
+            } },
+            confirmButton = { TextButton(onClick = { confirmRetry = true }) { Text("Retry after review…") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissReview) { Text("Close") } })
+        if (confirmRetry) AlertDialog(onDismissRequest = { confirmRetry = false }, title = { Text("Retry service creation?") },
+            text = { Text("I reviewed LubeLogger and want to send this service again. This can create a duplicate if the original upload succeeded.") },
+            confirmButton = { TextButton(onClick = { confirmRetry = false; viewModel.reviewUpload(expenseId, null) }) { Text("Retry service upload") } },
+            dismissButton = { TextButton(onClick = { confirmRetry = false }) { Text("Cancel") } })
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,8 +83,14 @@ internal fun CalendarContent(
     createdLocation: String? = null,
     onCreationShown: () -> Unit = {},
     onManage: (() -> Unit)? = null,
-    onRecordService: (Reminder) -> Unit = {}
+    onRecordService: (Reminder) -> Unit = {},
+    onChange: (Reminder, ReminderValues?) -> Unit = { _, _ -> },
+    onCancelChange: (Int) -> Unit = {},
+    onResolve: (Int, Boolean) -> Unit = { _, _ -> },
+    onReview: (Int) -> Unit = {}
 ) {
+    var editing by remember { mutableStateOf<Pair<Reminder, Boolean>?>(null) }
+    var removing by remember { mutableStateOf<Reminder?>(null) }
     var view by rememberSaveable { mutableIntStateOf(0) }
     var monthValue by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
     var selectedValue by rememberSaveable { mutableStateOf<String?>(null) }
@@ -142,6 +171,9 @@ internal fun CalendarContent(
                         }
                     }
                 }
+                if (state.maintenance.isNotEmpty()) item {
+                    MaintenanceActivity(state.maintenance, state.reminders.associate { it.id to it.description }, onCancelChange, onResolve, onReview)
+                }
                 if (state.isLoading && state.fetchedAt == null) item {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Loading maintenance…", style = MaterialTheme.typography.bodyMedium)
@@ -216,6 +248,21 @@ internal fun CalendarContent(
     }
     state.reminders.firstOrNull { it.id == detailId }?.let { reminder ->
         ReminderDetailSheet(reminder, odometerUnit, today, { detailId = null }, onManage,
-            onRecordService = { detailId = null; onRecordService(reminder) })
+            onRecordService = { detailId = null; onRecordService(reminder) },
+            onReschedule = { detailId = null; editing = reminder to true },
+            onEdit = { detailId = null; editing = reminder to false },
+            onRemove = { detailId = null; removing = reminder })
     }
+    editing?.let { (reminder, scheduleOnly) ->
+        ReminderChangeDialog(reminder, scheduleOnly, state.maintenance[reminder.id], { editing = null }) {
+            onChange(reminder, it); editing = null
+        }
+    }
+    removing?.let { reminder ->
+        AlertDialog(onDismissRequest = { removing = null }, title = { Text("Permanently remove reminder?") },
+            text = { Text("This permanently removes ${reminder.description} and any recurring schedule from LubeLogger. Service records are kept.") },
+            confirmButton = { TextButton(onClick = { onChange(reminder, null); removing = null }) { Text("Remove permanently") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
+    }
+
 }

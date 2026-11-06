@@ -9,6 +9,7 @@ import com.lesicnik.wrench.data.repository.ExpenseRepository
 import com.lesicnik.wrench.data.repository.FuelStatistics
 import com.lesicnik.wrench.data.repository.Reminder
 import com.lesicnik.wrench.data.repository.ReminderRepository
+import com.lesicnik.wrench.data.sync.MaintenanceState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,8 @@ data class HomeUiState(
     val errorMessage: String? = null,
     val reminders: List<Reminder> = emptyList(),
     val remindersLoaded: Boolean = false,
-    val maintenanceError: String? = null
+    val maintenanceError: String? = null,
+    val maintenance: Map<Int, MaintenanceState> = emptyMap()
 )
 
 class HomeViewModel(
@@ -39,6 +41,15 @@ class HomeViewModel(
     private var maintenanceJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            val c = credentialsRepository.getCredentials() ?: return@launch
+            launch { reminderRepository.observe(c, vehicleId).collect { snapshot ->
+                snapshot?.let { _uiState.value = _uiState.value.copy(reminders = it.reminders, remindersLoaded = true) }
+            } }
+            reminderRepository.maintenance.observe(c, vehicleId).collect {
+                _uiState.value = _uiState.value.copy(maintenance = it)
+            }
+        }
         viewModelScope.launch {
             expenseRepository.sessionDataReady.collect { loadStatistics() }
         }
