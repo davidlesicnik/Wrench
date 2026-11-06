@@ -44,7 +44,7 @@ object SyncWorkScheduler {
         WorkManager.getInstance(context)
             .enqueueUniqueWork(
                 IMMEDIATE_SYNC_WORK,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request
             )
     }

@@ -1,5 +1,6 @@
 package com.lesicnik.wrench.ui.expenses
 
+import com.lesicnik.wrench.data.repository.ReminderMetric
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.remote.records.ExpenseType
+import com.lesicnik.wrench.data.repository.Reminder
 import com.lesicnik.wrench.ui.components.EntryOptionalDetails
 import com.lesicnik.wrench.ui.components.EntrySection
 import com.lesicnik.wrench.ui.components.VehicleTopBar
@@ -63,7 +65,7 @@ fun AddEditExpenseScreen(
         if (uiState.notes.isNotBlank()) showNotes = true
         if (uiState.isMissedFuelUp) showFuelOptions = true
     }
-    val enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict
+    val enabled = !uiState.isLoading && !uiState.isDeleting && !uiState.isResolvingConflict && (!uiState.isLinkedService || uiState.linkedReminder != null)
     val back = { if (uiState.isDirty) viewModel.showDiscardDialog() else onNavigateBack() }
     BackHandler { if (enabled) back() }
     LaunchedEffect(uiState.isSaved) { if (uiState.isSaved) onExpenseSaved() }
@@ -78,7 +80,7 @@ fun AddEditExpenseScreen(
     val accent = if (darkSurface) lerp(expenseStyle.color, MaterialTheme.colorScheme.onSurface, 0.35f) else expenseStyle.color
     Scaffold(
         modifier = Modifier.imePadding(),
-        topBar = { VehicleTopBar(if (uiState.isEditMode) "Edit expense" else "Add expense", vehicleName, { if (enabled) back() }) {
+        topBar = { VehicleTopBar(if (uiState.isEditMode) "Edit expense" else if (uiState.isLinkedService) "Record service" else "Add expense", vehicleName, { if (enabled) back() }) {
             if (uiState.isEditMode) IconButton(onClick = viewModel::showDeleteDialog, enabled = enabled) {
                 Icon(Icons.Default.Delete, "Delete expense", tint = MaterialTheme.colorScheme.error)
             }
@@ -87,7 +89,7 @@ fun AddEditExpenseScreen(
             Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!uiState.isEditMode) {
+                    if (!uiState.isEditMode && !uiState.isLinkedService) {
                         Row(Modifier.fillMaxWidth().testTag("expense-type-selector").selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(ExpenseType.FUEL, ExpenseType.SERVICE, ExpenseType.REPAIR, ExpenseType.UPGRADE, ExpenseType.TAX).forEach { type ->
                                 val style = type.getStyle()
@@ -214,6 +216,9 @@ fun AddEditExpenseScreen(
                     Text("Recurring expense", style = MaterialTheme.typography.bodyLarge)
                 }
             }
+            if (uiState.linkedReminder != null) {
+                AfterRecordingFields(uiState, viewModel, odometerUnit, enabled)
+            }
             EntryOptionalDetails(
                 title = if (uiState.notes.isBlank()) "Notes (optional)" else "Notes added",
                 expanded = showNotes, enabled = enabled,
@@ -227,6 +232,13 @@ fun AddEditExpenseScreen(
         }
     }
 
+    if (uiState.confirmReminderRemoval) AlertDialog(
+        onDismissRequest = viewModel::dismissReminderRemoval,
+        title = { Text("Permanently remove reminder?") },
+        text = { Text("After the service uploads, this reminder and any recurring schedule will be permanently removed from LubeLogger.") },
+        confirmButton = { TextButton(onClick = viewModel::confirmReminderRemoval) { Text("Save service and remove reminder") } },
+        dismissButton = { TextButton(onClick = viewModel::dismissReminderRemoval) { Text("Cancel") } }
+    )
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = uiState.date
@@ -399,5 +411,36 @@ fun AddEditExpenseScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun AfterRecordingFields(state: AddEditExpenseUiState, vm: AddEditExpenseViewModel, unit: String, enabled: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("After recording", style = MaterialTheme.typography.titleMedium)
+        listOf("UNCHANGED" to "Leave reminder unchanged", "SCHEDULE" to "Set next due date / mileage", "REMOVE" to "Remove reminder permanently").forEach { (value, label) ->
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(state.afterRecording == value, enabled = enabled, role = Role.RadioButton,
+                onClick = { vm.afterRecording(value) }), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(state.afterRecording == value, onClick = null, enabled = enabled, modifier = Modifier.padding(end = 12.dp))
+                Text(label)
+            }
+        }
+        if (state.afterRecording == "SCHEDULE") {
+            val metric = state.linkedReminder?.metric
+            if (metric != ReminderMetric.ODOMETER)
+                OutlinedTextField(state.nextDueDate, vm::nextDueDate, label = { Text("Next due date (YYYY-MM-DD)") }, enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (metric != ReminderMetric.DATE) {
+                Row(Modifier.fillMaxWidth().toggleable(state.additionalDistance, enabled = enabled, role = Role.Checkbox,
+                    onValueChange = vm::additionalDistance), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(state.additionalDistance, onCheckedChange = null, enabled = enabled)
+                    Text("Add distance to service odometer")
+                }
+                OutlinedTextField(state.nextDueOdometer, vm::nextDueOdometer,
+                    label = { Text(if (state.additionalDistance) "Distance after this service ($unit)" else "Next odometer target ($unit)") },
+                    enabled = enabled, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            }
+            Text("Enter explicit targets. Recurring intervals stay in LubeLogger.", style = MaterialTheme.typography.bodySmall)
+        }
+        if (state.afterRecording == "REMOVE") Text("Permanent removal includes any recurring schedule. You will confirm separately before saving.", style = MaterialTheme.typography.bodySmall)
     }
 }

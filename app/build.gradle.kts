@@ -30,8 +30,8 @@ android {
         applicationId = "com.lesicnik.wrench"
         minSdk = 29
         targetSdk = 35
-        versionCode = 11
-        versionName = "11"
+        versionCode = 12
+        versionName = "12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

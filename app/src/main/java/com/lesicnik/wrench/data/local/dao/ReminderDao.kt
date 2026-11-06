@@ -10,6 +10,9 @@ import com.lesicnik.wrench.data.local.entity.ReminderSyncEntity
 @Dao
 interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE accountKey = :accountKey AND vehicleId = :vehicleId")
+    fun observe(accountKey: String, vehicleId: Int): kotlinx.coroutines.flow.Flow<List<ReminderEntity>>
+
+    @Query("SELECT * FROM reminders WHERE accountKey = :accountKey AND vehicleId = :vehicleId")
     suspend fun getReminders(accountKey: String, vehicleId: Int): List<ReminderEntity>
 
     @Query("SELECT fetchedAt FROM reminder_sync WHERE accountKey = :accountKey AND vehicleId = :vehicleId")

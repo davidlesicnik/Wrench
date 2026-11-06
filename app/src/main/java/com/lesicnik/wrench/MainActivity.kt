@@ -4,24 +4,24 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.compose.rememberNavController
 import coil.imageLoader
 import coil.request.ImageRequest
+import com.lesicnik.wrench.data.local.WrenchDatabase
 import com.lesicnik.wrench.data.preload.SessionPreloader
 import com.lesicnik.wrench.data.remote.photoUrl
-import com.lesicnik.wrench.data.local.WrenchDatabase
-import com.lesicnik.wrench.data.repository.ReminderRepository
 import com.lesicnik.wrench.data.repository.Credentials
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
+import com.lesicnik.wrench.data.repository.ReminderRepository
 import com.lesicnik.wrench.data.repository.VehicleRepository
 import com.lesicnik.wrench.data.sync.OfflineSyncEngine
 import com.lesicnik.wrench.data.sync.SyncWorkScheduler
 import com.lesicnik.wrench.ui.navigation.WrenchNavGraph
 import com.lesicnik.wrench.ui.theme.WrenchTheme
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -37,7 +37,7 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private val reminderRepository by lazy { ReminderRepository(database) }
+    private val reminderRepository by lazy { ReminderRepository(database, scheduleSync = { SyncWorkScheduler.enqueueImmediateSync(applicationContext) }) }
 
     private val sessionPreloader by lazy {
         SessionPreloader(

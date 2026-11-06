@@ -23,5 +23,6 @@ data class PendingSyncOpEntity(
     val baseFingerprint: String?,
     val createdAt: Long,
     val attemptCount: Int,
-    val lastError: String?
+    val lastError: String?,
+    val accountKey: String? = null
 )

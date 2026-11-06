@@ -1,10 +1,7 @@
 package com.lesicnik.wrench.ui.expenses
 
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,26 +12,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DateRangePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -52,8 +51,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -64,29 +63,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.lesicnik.wrench.data.remote.records.Expense
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.sync.ExpenseSyncState
-import com.lesicnik.wrench.ui.components.VehicleTopBar
-import com.lesicnik.wrench.ui.components.VehicleNavigationBar
 import com.lesicnik.wrench.ui.components.AddRecordButton
 import com.lesicnik.wrench.ui.components.BottomTab
 import com.lesicnik.wrench.ui.components.EmptyContent
 import com.lesicnik.wrench.ui.components.ErrorContent
+import com.lesicnik.wrench.ui.components.VehicleNavigationBar
+import com.lesicnik.wrench.ui.components.VehicleTopBar
 import com.lesicnik.wrench.ui.utils.ErrorSnackbarEffect
 import com.lesicnik.wrench.ui.utils.RefreshOnResumeEffect
 import com.lesicnik.wrench.ui.utils.color
 import com.lesicnik.wrench.ui.utils.getStyle
 import com.lesicnik.wrench.ui.utils.icon
-import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -103,6 +103,7 @@ fun ExpensesScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var reviewLegacy by remember { mutableStateOf(false) }
     var selectedExpense by remember { mutableStateOf<Expense?>(null) }
     var showDateRange by remember { mutableStateOf(false) }
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -123,6 +124,13 @@ fun ExpensesScreen(
         snackbarHostState = snackbarHostState,
         onErrorConsumed = viewModel::clearError
     )
+
+    if (reviewLegacy) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { reviewLegacy = false },
+        title = { Text("Assign existing queued changes?") },
+        text = { Text("Older offline changes have no account identity. Review this vehicle's pending expenses first. Continue only if these changes belong to the currently signed-in LubeLogger account.") },
+        confirmButton = { TextButton(onClick = { reviewLegacy = false; viewModel.claimLegacyOperations() }) { Text("Assign and sync") } },
+        dismissButton = { TextButton(onClick = { reviewLegacy = false }) { Text("Cancel") } })
 
     Scaffold(
         topBar = {
@@ -396,6 +404,7 @@ fun ExpensesScreen(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.weight(1f)
                     )
+                    if (summary.unownedCount > 0) TextButton(onClick = { reviewLegacy = true }) { Text("Review ${summary.unownedCount} older changes") }
                     TextButton(enabled = !uiState.isLoading, onClick = { viewModel.loadExpenses(forceRefresh = true) }) {
                         Text(if (summary.refreshError != null || summary.problemCount > 0) "Retry" else "Sync")
                     }

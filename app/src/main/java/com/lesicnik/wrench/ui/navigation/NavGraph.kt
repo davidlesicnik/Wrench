@@ -1,7 +1,6 @@
 package com.lesicnik.wrench.ui.navigation
 
 import android.net.Uri
-import java.time.LocalDate
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
@@ -11,12 +10,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import com.lesicnik.wrench.ui.calendar.AddReminderScreen
-import com.lesicnik.wrench.ui.calendar.AddReminderViewModel
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -27,12 +24,14 @@ import com.lesicnik.wrench.data.preload.SessionPreloader
 import com.lesicnik.wrench.data.remote.records.ExpenseType
 import com.lesicnik.wrench.data.repository.CredentialsRepository
 import com.lesicnik.wrench.data.repository.ExpenseRepository
-import com.lesicnik.wrench.data.repository.ReminderRepository
 import com.lesicnik.wrench.data.repository.ReminderMetric
+import com.lesicnik.wrench.data.repository.ReminderRepository
+import com.lesicnik.wrench.data.repository.VehicleRepository
+import com.lesicnik.wrench.ui.calendar.AddReminderScreen
+import com.lesicnik.wrench.ui.calendar.AddReminderViewModel
 import com.lesicnik.wrench.ui.calendar.CalendarScreen
 import com.lesicnik.wrench.ui.calendar.CalendarViewModel
 import com.lesicnik.wrench.ui.components.BottomTab
-import com.lesicnik.wrench.data.repository.VehicleRepository
 import com.lesicnik.wrench.ui.expenses.AddEditExpenseScreen
 import com.lesicnik.wrench.ui.expenses.AddEditExpenseViewModel
 import com.lesicnik.wrench.ui.expenses.ExpensesScreen
@@ -45,6 +44,7 @@ import com.lesicnik.wrench.ui.statistics.StatisticsScreen
 import com.lesicnik.wrench.ui.statistics.StatisticsViewModel
 import com.lesicnik.wrench.ui.vehicles.VehiclesScreen
 import com.lesicnik.wrench.ui.vehicles.VehiclesViewModel
+import java.time.LocalDate
 
 /**
  * Data class to hold common vehicle navigation arguments.
@@ -95,9 +95,9 @@ sealed class Screen(val route: String) {
         fun createRoute(vehicleId: Int, vehicleName: String, odometerUnit: String, initialDate: LocalDate, metric: ReminderMetric): String =
             "addReminder/$vehicleId/${Uri.encode(vehicleName)}/${Uri.encode(odometerUnit)}/$initialDate?metric=${metric.name}"
     }
-    data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}?service={service}") {
-        fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?, service: String = ""): String {
-            return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}?service=${Uri.encode(service)}"
+    data object AddExpense : Screen("addExpense/{vehicleId}/{odometerUnit}/{lastOdometer}?service={service}&reminderId={reminderId}") {
+        fun createRoute(vehicleId: Int, odometerUnit: String, lastOdometer: Int?, service: String = "", reminderId: Int = -1): String {
+            return "addExpense/$vehicleId/${Uri.encode(odometerUnit)}/${lastOdometer ?: -1}?service=${Uri.encode(service)}&reminderId=$reminderId"
         }
     }
     data object EditExpense : Screen("editExpense/{vehicleId}/{odometerUnit}/{expenseId}/{expenseType}") {
@@ -311,7 +311,7 @@ fun WrenchNavGraph(
                 },
                 onRecordService = { reminder ->
                     val lastOdometer = expenseRepository.getCachedExpenses(vehicleId)?.mapNotNull { it.odometer }?.maxOrNull()
-                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer, reminder.description))
+                    navController.navigate(Screen.AddExpense.createRoute(vehicleId, odometerUnit, lastOdometer, reminder.description, reminder.id))
                 }
             )
         }
@@ -348,7 +348,8 @@ fun WrenchNavGraph(
                 navArgument("vehicleId") { type = NavType.IntType },
                 navArgument("odometerUnit") { type = NavType.StringType },
                 navArgument("lastOdometer") { type = NavType.IntType },
-                navArgument("service") { type = NavType.StringType; defaultValue = "" }
+                navArgument("service") { type = NavType.StringType; defaultValue = "" },
+                navArgument("reminderId") { type = NavType.IntType; defaultValue = -1 }
             ),
             enterTransition = { slideInHorizontally(animationSpec = tween(200)) { it } },
             exitTransition = { ExitTransition.None },
@@ -364,7 +365,8 @@ fun WrenchNavGraph(
                     credentialsRepository = credentialsRepository,
                     expenseRepository = expenseRepository,
                     vehicleId = vehicleId,
-                    serviceDescription = backStackEntry.arguments?.getString("service").orEmpty()
+                    serviceDescription = backStackEntry.arguments?.getString("service").orEmpty(),
+                    reminderId = backStackEntry.arguments?.getInt("reminderId")?.takeIf { it > 0 }
                 )
             )
 

@@ -33,5 +33,6 @@ data class ExpenseEntity(
     val isDeletedLocal: Boolean,
     val updatedAt: Long,
     val lastSyncedFingerprint: String?,
-    val lastSyncError: String?
+    val lastSyncError: String?,
+    val accountKey: String? = null
 )

@@ -5,9 +5,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -23,7 +23,8 @@ import java.time.format.FormatStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalDate, onDismiss: () -> Unit, onManage: (() -> Unit)?, onRecordService: (() -> Unit)? = null) {
+internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalDate, onDismiss: () -> Unit, onManage: (() -> Unit)?, onRecordService: (() -> Unit)? = null,
+    onReschedule: (() -> Unit)? = null, onEdit: (() -> Unit)? = null, onRemove: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -60,9 +61,12 @@ internal fun ReminderDetailSheet(reminder: Reminder, unit: String, today: LocalD
             }
             if (onRecordService != null) {
                 Button(onClick = onRecordService, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Record service") }
-                Text("Log the work as an expense, then complete or reschedule this reminder in LubeLogger.",
+                Text("Save the service on this device and choose what happens to this reminder.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (onReschedule != null) OutlinedButton(onClick = onReschedule, modifier = Modifier.fillMaxWidth()) { Text("Reschedule") }
+            if (onEdit != null) OutlinedButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Edit") }
+            if (onRemove != null) TextButton(onClick = onRemove, modifier = Modifier.fillMaxWidth()) { Text("Remove reminder", color = MaterialTheme.colorScheme.error) }
             if (onManage != null) {
                 OutlinedButton(onClick = onManage, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))

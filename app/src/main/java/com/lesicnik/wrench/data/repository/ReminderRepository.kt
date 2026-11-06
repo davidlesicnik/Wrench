@@ -7,13 +7,15 @@ import com.lesicnik.wrench.data.local.entity.ReminderSyncEntity
 import com.lesicnik.wrench.data.remote.NetworkModule
 import com.lesicnik.wrench.data.remote.ReminderRecord
 import com.lesicnik.wrench.data.remote.ReminderWriteResponse
-import retrofit2.Response
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import com.lesicnik.wrench.data.sync.MaintenanceCoordinator
+import com.lesicnik.wrench.data.sync.OfflineSyncEngine
 import java.io.IOException
 import java.security.MessageDigest
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import retrofit2.Response
 
 data class ReminderSnapshot(val reminders: List<Reminder>, val fetchedAt: Long)
 
@@ -30,10 +32,12 @@ class ReminderRepository(
             draft.notes.trim(), draft.tags.trim()
         )
     },
+    private val scheduleSync: () -> Unit = {},
     private val fetchReminders: suspend (Credentials, Int) -> Response<List<ReminderRecord>> = { credentials, vehicleId ->
         NetworkModule.getApi(credentials.serverUrl).getReminders(credentials.apiKey, vehicleId)
     }
 ) {
+    val maintenance = MaintenanceCoordinator(database)
     private val mutex = Mutex()
 
     suspend fun latestOdometer(credentials: Credentials, vehicleId: Int): ApiResult<Int> = try {
@@ -75,6 +79,18 @@ class ReminderRepository(
         "Couldn't confirm whether the reminder was saved. Check the calendar before adding it again.",
         mayHaveSaved = true
     )
+
+    fun requestSync() { runCatching { scheduleSync() } }
+
+    suspend fun syncAndRefresh(credentials: Credentials, vehicleId: Int): ApiResult<ReminderSnapshot> {
+        OfflineSyncEngine(database).syncServer(credentials.serverUrl, credentials.apiKey, listOf(vehicleId))
+        return refresh(credentials, vehicleId)
+    }
+
+    fun observe(credentials: Credentials, vehicleId: Int) = kotlinx.coroutines.flow.combine(
+        database.reminderDao().observe(accountKey(credentials), vehicleId),
+        maintenance.observe(credentials, vehicleId)
+    ) { _, _ -> cached(credentials, vehicleId) }
 
     suspend fun cached(credentials: Credentials, vehicleId: Int): ReminderSnapshot? {
         val key = accountKey(credentials)

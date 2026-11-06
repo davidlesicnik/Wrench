@@ -17,7 +17,12 @@ Wrench is an Android companion app for [LubeLogger](https://github.com/hargata/l
 * **Vehicle Overview:** View all of your vehicles.
 * **Maintenance:** Start with an agenda of overdue and upcoming work, combining date and mileage
   reminders. Switch to the month calendar or mileage view when needed. Home shows the next task.
-  Record a service expense from reminder details; complete or reschedule the reminder in LubeLogger.
+  Record service from a reminder, then leave it unchanged (the default), set an explicit next due
+  date/mileage, or permanently remove it and its recurring schedule with separate confirmation.
+  Edit, reschedule, and remove reminders offline. Linked services upload first; reminder changes
+  follow only after confirmation. Home and Maintenance share saved/pending/attention states.
+  Conflicts offer server or local values; uncertain service uploads require review before retrying.
+  Advanced recurring settings and automatic recurring completion stay in LubeLogger.
   Add reminders with a date, odometer target,
   or both, plus notes and tags. Mileage reminders default to a relative interval from the latest
   recorded odometer, with presets and an exact-target option. Creation requires a connection
@@ -43,6 +48,9 @@ blocked, and authenticated photos must use the same scheme, host, and port.
 Offline login requires matching saved credentials from a successful login and a
 connection failure. Rejected keys cannot unlock cached data. Credentials and local
 databases, including unsynced edits, are excluded from backups and device transfers.
+Queued work survives logout and resumes only with the same server/API-key identity. Older
+expense operations without an identity remain paused until reviewed and assigned in Expenses.
+See [maintenance sync and recovery](docs/maintenance-sync.md) for queue behavior and validation.
 
 ## Installation & Build
 
