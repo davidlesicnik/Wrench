@@ -1,10 +1,10 @@
 package com.lesicnik.wrench.ui.calendar
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,8 +12,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -27,11 +28,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.lesicnik.wrench.data.repository.ReminderMetric
+import com.lesicnik.wrench.ui.components.EntryOptionalDetails
+import com.lesicnik.wrench.ui.components.EntrySection
+import com.lesicnik.wrench.ui.components.entryFieldColors
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -85,7 +88,7 @@ internal fun AddReminderContent(
             )
         },
         bottomBar = {
-            Surface(color = MaterialTheme.colorScheme.background, shadowElevation = 3.dp) {
+            Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
                 Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val hint = when {
@@ -104,28 +107,34 @@ internal fun AddReminderContent(
                         if (state.isSaving) {
                             CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp)); Text("Saving…")
-                        } else Text(if (state.requiresCalendarCheck) "Check calendar" else "Save reminder")
+                        } else {
+                            Icon(if (state.requiresCalendarCheck) Icons.Default.CalendarMonth else Icons.Default.Check, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (state.requiresCalendarCheck) "Check calendar" else "Save reminder")
+                        }
                     }
                 }
             }
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).testTag("reminder-form")
-            .padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            .padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (state.errorMessage != null) Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer) {
                 Text(state.errorMessage, Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
             }
-            OutlinedTextField(
-                value = state.description, onValueChange = { value -> onUpdate { it.copy(description = value) } },
-                modifier = Modifier.fillMaxWidth().testTag("reminder-description"), shape = RoundedCornerShape(14.dp),
-                label = { Text("Reminder") }, placeholder = { Text("Oil change") }, maxLines = 3, enabled = enabled,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { finishInput() })
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("When should I remind you?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            EntrySection(title = "What needs attention?", icon = Icons.Default.NotificationsNone) {
+                OutlinedTextField(
+                    value = state.description, onValueChange = { value -> onUpdate { it.copy(description = value) } },
+                    modifier = Modifier.fillMaxWidth().testTag("reminder-description"), shape = RoundedCornerShape(14.dp),
+                    colors = entryFieldColors(),
+                    label = { Text("Reminder") }, placeholder = { Text("Oil change") }, maxLines = 3, enabled = enabled,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { finishInput() })
+                )
+            }
+            EntrySection(title = "When should I remind you?", icon = Icons.Default.Schedule) {
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().selectableGroup().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf(ReminderMetric.ODOMETER, ReminderMetric.DATE, ReminderMetric.BOTH).forEach { metric ->
                             val active = state.metric == metric
                             val color by animateColorAsState(if (active) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent, label = "schedule")
@@ -140,46 +149,38 @@ internal fun AddReminderContent(
                         }
                     }
                 }
-            }
-            if (state.metric != ReminderMetric.ODOMETER) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box {
-                    OutlinedTextField(value = state.dueDate.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)), onValueChange = {},
-                        modifier = Modifier.fillMaxWidth(), label = { Text("Due date") }, readOnly = true, enabled = enabled,
-                        shape = RoundedCornerShape(14.dp), trailingIcon = { Icon(Icons.Default.CalendarMonth, null) })
-                    Surface(onClick = { finishInput(); showDatePicker = true }, enabled = enabled,
-                        color = androidx.compose.ui.graphics.Color.Transparent, modifier = Modifier.matchParentSize().testTag("reminder-date").semantics {
-                            contentDescription = "Choose due date, ${state.dueDate.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))}"
-                        }) { }
-                }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("In 1 month" to today.plusMonths(1), "In 1 year" to today.plusYears(1)).forEach { (label, date) ->
-                        SuggestionChip(onClick = { finishInput(); onUpdate { it.copy(dueDate = date) } }, enabled = enabled, label = { Text(label) })
+                if (state.metric != ReminderMetric.ODOMETER) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box {
+                        OutlinedTextField(value = state.dueDate.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)), onValueChange = {},
+                            modifier = Modifier.fillMaxWidth(), label = { Text("Due date") }, readOnly = true, enabled = enabled,
+                            shape = RoundedCornerShape(14.dp), colors = entryFieldColors(), trailingIcon = { Icon(Icons.Default.CalendarMonth, null) })
+                        Surface(onClick = { finishInput(); showDatePicker = true }, enabled = enabled,
+                            color = androidx.compose.ui.graphics.Color.Transparent, modifier = Modifier.matchParentSize().testTag("reminder-date").semantics {
+                                contentDescription = "Choose due date, ${state.dueDate.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))}"
+                            }) { }
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("In 1 month" to today.plusMonths(1), "In 1 year" to today.plusYears(1)).forEach { (label, date) ->
+                            SuggestionChip(onClick = { finishInput(); onUpdate { it.copy(dueDate = date) } }, enabled = enabled, label = { Text(label) })
+                        }
                     }
                 }
-            }
-            if (state.metric != ReminderMetric.DATE) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReminderMileageFields(state, odometerUnit, enabled, onUpdate, finishInput)
-                if (state.metric == ReminderMetric.BOTH) Text("The date or mileage, whichever comes first.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Column {
-                TextButton(onClick = { finishInput(); showDetails = !showDetails }, enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(vertical = 8.dp)) {
-                    Text("Notes and tags (optional)", Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Start)
-                    Icon(if (showDetails) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (showDetails) "Hide optional details" else "Show optional details")
+                if (state.metric != ReminderMetric.DATE) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReminderMileageFields(state, odometerUnit, enabled, onUpdate, finishInput)
+                    if (state.metric == ReminderMetric.BOTH) Text("The date or mileage, whichever comes first.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                AnimatedVisibility(showDetails) {
-                    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        OutlinedTextField(value = state.notes, onValueChange = { value -> onUpdate { it.copy(notes = value) } },
-                            modifier = Modifier.fillMaxWidth().testTag("reminder-notes"), shape = RoundedCornerShape(14.dp),
-                            label = { Text("Notes") }, minLines = 3, maxLines = 6, enabled = enabled,
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-                        OutlinedTextField(value = state.tags, onValueChange = { value -> onUpdate { it.copy(tags = value) } },
-                            modifier = Modifier.fillMaxWidth().testTag("reminder-tags"), shape = RoundedCornerShape(14.dp),
-                            label = { Text("Tags") }, supportingText = { Text("Separate tags with spaces.") }, singleLine = true, enabled = enabled,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { finishInput() }))
-                    }
-                }
+            }
+            EntryOptionalDetails(title = "Notes and tags (optional)", expanded = showDetails, enabled = enabled,
+                onClick = { finishInput(); showDetails = !showDetails }) {
+                OutlinedTextField(value = state.notes, onValueChange = { value -> onUpdate { it.copy(notes = value) } },
+                    modifier = Modifier.fillMaxWidth().testTag("reminder-notes"), shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    label = { Text("Notes") }, minLines = 3, maxLines = 6, enabled = enabled,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                OutlinedTextField(value = state.tags, onValueChange = { value -> onUpdate { it.copy(tags = value) } },
+                    modifier = Modifier.fillMaxWidth().testTag("reminder-tags"), shape = RoundedCornerShape(14.dp), colors = entryFieldColors(),
+                    label = { Text("Tags") }, supportingText = { Text("Separate tags with spaces.") }, singleLine = true, enabled = enabled,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { finishInput() }))
             }
         }
     }
