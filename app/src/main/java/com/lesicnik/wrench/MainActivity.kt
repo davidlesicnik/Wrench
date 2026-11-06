@@ -33,7 +33,8 @@ class MainActivity : ComponentActivity() {
         ExpenseRepository(
             appContext = applicationContext,
             database = database,
-            syncEngine = syncEngine
+            syncEngine = syncEngine,
+            credentialsStore = credentialsRepository
         )
     }
 

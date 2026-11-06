@@ -10,12 +10,13 @@ import com.lesicnik.wrench.data.repository.FuelStatistics
 import com.lesicnik.wrench.data.repository.Reminder
 import com.lesicnik.wrench.data.repository.ReminderRepository
 import com.lesicnik.wrench.data.sync.MaintenanceState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class HomeUiState(
     val fuelStatistics: FuelStatistics? = null,
@@ -80,9 +81,10 @@ class HomeViewModel(
 
             // If we have cached data and not forcing refresh, use it immediately
             if (!forceRefresh && cachedStats != null && cachedExpenses != null) {
+                val overview = withContext(Dispatchers.Default) { buildHomeOverview(cachedExpenses) }
                 _uiState.value = _uiState.value.copy(
                     fuelStatistics = cachedStats,
-                    overview = buildHomeOverview(cachedExpenses),
+                    overview = overview,
                     isLoading = false,
                     errorMessage = null
                 )
@@ -100,36 +102,22 @@ class HomeViewModel(
                 return@launch
             }
 
-            // Load fuel statistics and expenses in parallel
-            val statsDeferred = async {
-                expenseRepository.getFuelStatistics(
+            // Statistics refreshes and caches expenses too; a second forced read would sync twice.
+            when (val statsResult = expenseRepository.getFuelStatistics(
                     credentials.serverUrl,
                     credentials.apiKey,
                     vehicleId,
                     forceRefresh = forceRefresh
-                )
-            }
-            val expensesDeferred = async {
-                expenseRepository.getExpenses(
-                    credentials.serverUrl,
-                    credentials.apiKey,
-                    vehicleId,
-                    forceRefresh = forceRefresh
-                )
-            }
-
-            val statsResult = statsDeferred.await()
-            val expensesResult = expensesDeferred.await()
-
-            when (statsResult) {
+                )) {
                 is ApiResult.Success -> {
+                    val overview = withContext(Dispatchers.Default) {
+                        expenseRepository.getCachedExpenses(vehicleId)?.let { buildHomeOverview(it) }
+                    }
                     _uiState.value = _uiState.value.copy(
                         fuelStatistics = statsResult.data,
-                        overview = if (expensesResult is ApiResult.Success) {
-                            buildHomeOverview(expensesResult.data)
-                        } else _uiState.value.overview,
+                        overview = overview ?: _uiState.value.overview,
                         isLoading = false,
-                        errorMessage = (expensesResult as? ApiResult.Error)?.message
+                        errorMessage = null
                     )
                 }
                 is ApiResult.Error -> {
